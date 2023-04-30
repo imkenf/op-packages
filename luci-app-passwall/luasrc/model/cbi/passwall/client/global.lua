@@ -84,21 +84,42 @@ s:tab("Main", translate("Main"))
 o = s:taboption("Main", Flag, "enabled", translate("Main switch"))
 o.rmempty = false
 
----- TCP Node
-tcp_node = s:taboption("Main", ListValue, "tcp_node", "<a style='color: red'>" .. translate("TCP Node") .. "</a>")
-tcp_node.description = ""
-local current_node = luci.sys.exec(string.format("[ -f '/tmp/etc/%s/id/TCP' ] && echo -n $(cat /tmp/etc/%s/id/TCP)", appname, appname))
-if current_node and current_node ~= "" and current_node ~= "nil" then
-	local n = uci:get_all(appname, current_node)
+local auto_switch_tip
+local shunt_remark
+local current_tcp_node = luci.sys.exec(string.format("[ -f '/tmp/etc/%s/id/TCP' ] && echo -n $(cat /tmp/etc/%s/id/TCP)", appname, appname))
+if current_tcp_node and current_tcp_node ~= "" and current_tcp_node ~= "nil" then
+	local n = uci:get_all(appname, current_tcp_node)
 	if n then
 		if tonumber(m:get("@auto_switch[0]", "enable") or 0) == 1 then
-			local remarks = api.get_full_node_remarks(n)
-			local url = api.url("node_config", current_node)
-			tcp_node.description = tcp_node.description .. translatef("Current node: %s", string.format('<a href="%s">%s</a>', url, remarks)) .. "<br />"
+			if n.protocol == "_shunt" then
+				local shunt_logic = tonumber(m:get("@auto_switch[0]", "shunt_logic"))
+				if shunt_logic == 1 or shunt_logic == 2 then
+					if shunt_logic == 1 then
+						shunt_remark = "default"
+					elseif shunt_logic == 2 then
+						shunt_remark = "main"
+					end
+					current_tcp_node = luci.sys.exec(string.format("[ -f '/tmp/etc/%s/id/TCP_%s' ] && echo -n $(cat /tmp/etc/%s/id/TCP_%s)", appname, shunt_remark, appname, shunt_remark))
+					if current_tcp_node and current_tcp_node ~= "" and current_tcp_node ~= "nil" then
+						n = uci:get_all(appname, current_tcp_node)
+					end
+				end
+			end
+			if n then
+				local remarks = api.get_node_remarks(n)
+				local url = api.url("node_config", n[".name"])
+				auto_switch_tip = translatef("Current node: %s", string.format('<a href="%s">%s</a>', url, remarks)) .. "<br />"
+			end
 		end
 	end
 end
+
+---- TCP Node
+tcp_node = s:taboption("Main", ListValue, "tcp_node", "<a style='color: red'>" .. translate("TCP Node") .. "</a>")
 tcp_node:value("nil", translate("Close"))
+if not shunt_remark and auto_switch_tip then
+	tcp_node.description = auto_switch_tip
+end
 
 ---- UDP Node
 udp_node = s:taboption("Main", ListValue, "udp_node", "<a style='color: red'>" .. translate("UDP Node") .. "</a>")
@@ -108,105 +129,149 @@ udp_node:value("tcp", translate("Same as the tcp node"))
 -- 分流
 if (has_v2ray or has_xray) and #nodes_table > 0 then
 	local normal_list = {}
+	local balancing_list = {}
 	local shunt_list = {}
 	for k, v in pairs(nodes_table) do
-		if v.node_type == "normal" or v.protocol == "_balancing" then
+		if v.node_type == "normal" then
 			normal_list[#normal_list + 1] = v
+		end
+		if v.protocol and v.protocol == "_balancing" then
+			balancing_list[#balancing_list + 1] = v
 		end
 		if v.protocol and v.protocol == "_shunt" then
 			shunt_list[#shunt_list + 1] = v
 		end
 	end
-	
-	local function get_cfgvalue(shunt_node_id, rule_id)
+
+	local function get_cfgvalue(shunt_node_id, option)
 		return function(self, section)
-			return m:get(shunt_node_id, rule_id) or "nil"
+			return m:get(shunt_node_id, option) or "nil"
 		end
 	end
-	local function get_write(shunt_node_id, rule_id)
+	local function get_write(shunt_node_id, option)
 		return function(self, section, value)
-			m:set(shunt_node_id, rule_id, value)
+			m:set(shunt_node_id, option, value)
 		end
 	end
+	if #normal_list > 0 then
+		for k, v in pairs(shunt_list) do
+			local vid = v.id:sub(1, 8)
+			-- shunt node type, V2ray or Xray
+			local type = s:taboption("Main", ListValue, vid .. "-type", translate("Type"))
+			if has_v2ray then
+				type:value("V2ray", translate("V2ray"))
+			end
+			if has_xray then
+				type:value("Xray", translate("Xray"))
+			end
+			type.cfgvalue = get_cfgvalue(v.id, "type")
+			type.write = get_write(v.id, "type")
+			
+			-- pre-proxy
+			o = s:taboption("Main", Flag, vid .. "-preproxy_enabled", translate("Preproxy"))
+			o:depends("tcp_node", v.id)
+			o.rmempty = false
+			o.cfgvalue = get_cfgvalue(v.id, "preproxy_enabled")
+			o.write = get_write(v.id, "preproxy_enabled")
 
-	for k, v in pairs(shunt_list) do
-		local vid = v.id:sub(1, 8)
-		o = s:taboption("Main", ListValue, vid .. "-main_node", string.format('<a style="color:red">%s</a>', translate("Preproxy Node")), translate("Set the node to be used as a pre-proxy. Each rule (including <code>Default</code>) has a separate switch that controls whether this rule uses the pre-proxy or not."))
-		o:depends("tcp_node", v.id)
-		o:value("nil", translate("Close"))
-		for k1, v1 in pairs(normal_list) do
-			o:value(v1.id, v1.remark)
-		end
-		o.cfgvalue = get_cfgvalue(v.id, "main_node")
-		o.write = get_write(v.id, "main_node")
+			o = s:taboption("Main", Value, vid .. "-main_node", string.format('<a style="color:red">%s</a>', translate("Preproxy Node")), translate("Set the node to be used as a pre-proxy. Each rule (including <code>Default</code>) has a separate switch that controls whether this rule uses the pre-proxy or not."))
+			o:depends(vid .. "-preproxy_enabled", "1")
+			for k1, v1 in pairs(balancing_list) do
+				o:value(v1.id, v1.remark)
+			end
+			for k1, v1 in pairs(normal_list) do
+				o:value(v1.id, v1.remark)
+			end
+			o.cfgvalue = get_cfgvalue(v.id, "main_node")
+			o.write = get_write(v.id, "main_node")
+			if shunt_remark == "main" and auto_switch_tip then
+				o.description = auto_switch_tip
+			end
 
-		local dialerProxy = s:taboption("Main", Flag, vid .. "-dialerProxy", translate("dialerProxy"))
-		dialerProxy.default = "0"
-		if v.type == "Xray" then
-			dialerProxy:depends("tcp_node", v.id)
-		else --主设置界面没有type判断，只能判断本分流节点类型是Xray就添加对本分流节点的依赖，但不是的话就没有依赖，会全部显示，所以添加一个不存在的依赖以达到隐藏的目的
-			dialerProxy:depends("tcp_node", "xray_shunt")
-		end
-		dialerProxy.cfgvalue = get_cfgvalue(v.id, "dialerProxy")
-		dialerProxy.write = get_write(v.id, "dialerProxy")
-		dialerProxy.rmempty = false
+			if (has_v2ray and has_xray) or (v.type == "V2ray" and not has_v2ray) or (v.type == "Xray" and not has_xray) then
+				type:depends("tcp_node", v.id)
+			else
+				type:depends("tcp_node", "hide") --不存在的依赖，即始终隐藏
+			end
 
-		uci:foreach(appname, "shunt_rules", function(e)
-			local id = e[".name"]
-			local node_option = vid .. "-" .. id .. "_node"
-			if id and e.remarks then
-				o = s:taboption("Main", ListValue, node_option, string.format('* <a href="%s" target="_blank">%s</a>', api.url("shunt_rules", id), e.remarks))
-				o:depends("tcp_node", v.id)
-				o:value("nil", translate("Close"))
-				o:value("_default", translate("Default"))
-				o:value("_direct", translate("Direct Connection"))
-				o:value("_blackhole", translate("Blackhole"))
-				local pt = s:taboption("Main", ListValue, vid .. "-".. id .. "_proxy_tag", string.format('* <a style="color:red">%s</a>', e.remarks .. " " .. translate("Preproxy")))
-				pt:value("nil", translate("Close"))
-				pt:value("main", translate("Preproxy Node"))
-				pt.default = "nil"
-				for k1, v1 in pairs(normal_list) do
-					o:value(v1.id, v1.remark)
-					if v1.protocol ~= "_balancing" then
-						pt:depends(node_option, v1.id)
+			uci:foreach(appname, "shunt_rules", function(e)
+				local id = e[".name"]
+				local node_option = vid .. "-" .. id .. "_node"
+				if id and e.remarks then
+					o = s:taboption("Main", Value, node_option, string.format('* <a href="%s" target="_blank">%s</a>', api.url("shunt_rules", id), e.remarks))
+					o.cfgvalue = get_cfgvalue(v.id, id)
+					o.write = get_write(v.id, id)
+					o:depends("tcp_node", v.id)
+					o:value("nil", translate("Close"))
+					o:value("_default", translate("Default"))
+					o:value("_direct", translate("Direct Connection"))
+					o:value("_blackhole", translate("Blackhole"))
+
+					local pt = s:taboption("Main", ListValue, vid .. "-".. id .. "_proxy_tag", string.format('* <a style="color:red">%s</a>', e.remarks .. " " .. translate("Preproxy")))
+					pt.cfgvalue = get_cfgvalue(v.id, id .. "_proxy_tag")
+					pt.write = get_write(v.id, id .. "_proxy_tag")
+					pt:value("nil", translate("Close"))
+					pt:value("main", translate("Preproxy Node"))
+					pt.default = "nil"
+					for k1, v1 in pairs(balancing_list) do
+						o:value(v1.id, v1.remark)
+					end
+					for k1, v1 in pairs(normal_list) do
+						o:value(v1.id, v1.remark)
+						pt:depends({ [node_option] = v1.id, [vid .. "-preproxy_enabled"] = "1" })
 					end
 				end
-				o.cfgvalue = get_cfgvalue(v.id, id)
-				o.write = get_write(v.id, id)
-				pt.cfgvalue = get_cfgvalue(v.id, id .. "_proxy_tag")
-				pt.write = get_write(v.id, id .. "_proxy_tag")
-			end
-		end)
+			end)
 
-		local id = "default_node"
-		o = s:taboption("Main", ListValue, vid .. "-" .. id, string.format('* <a style="color:red">%s</a>', translate("Default")))
-		o:depends("tcp_node", v.id)
-		o:value("_direct", translate("Direct Connection"))
-		o:value("_blackhole", translate("Blackhole"))
-		for k1, v1 in pairs(normal_list) do
-			o:value(v1.id, v1["remark"])
-		end
-		o.cfgvalue = get_cfgvalue(v.id, id)
-		o.write = get_write(v.id, id)
+			local id = "default_node"
+			o = s:taboption("Main", Value, vid .. "-" .. id, string.format('* <a style="color:red">%s</a>', translate("Default")))
+			o.cfgvalue = get_cfgvalue(v.id, id)
+			o.write = get_write(v.id, id)
+			o:depends("tcp_node", v.id)
+			o:value("_direct", translate("Direct Connection"))
+			o:value("_blackhole", translate("Blackhole"))
+			for k1, v1 in pairs(balancing_list) do
+				o:value(v1.id, v1.remark)
+			end
+			for k1, v1 in pairs(normal_list) do
+				o:value(v1.id, v1.remark)
+			end
+			if shunt_remark == "default" and auto_switch_tip then
+				o.description = auto_switch_tip
+			end
 
-		local id = "default_proxy_tag"
-		o = s:taboption("Main", ListValue, vid .. "-" .. id, string.format('* <a style="color:red">%s</a>', translate("Default Preproxy")), translate("When using, localhost will connect this node first and then use this node to connect the default node."))
-		for k1, v1 in pairs(normal_list) do
-			if v1.protocol ~= "_balancing" then
-				o:depends(vid .. "-default_node", v1.id)
+			local id = "default_proxy_tag"
+			o = s:taboption("Main", ListValue, vid .. "-" .. id, string.format('* <a style="color:red">%s</a>', translate("Default Preproxy")), translate("When using, localhost will connect this node first and then use this node to connect the default node."))
+			o.cfgvalue = get_cfgvalue(v.id, id)
+			o.write = get_write(v.id, id)
+			o:value("nil", translate("Close"))
+			o:value("main", translate("Preproxy Node"))
+			for k1, v1 in pairs(normal_list) do
+				if v1.protocol ~= "_balancing" then
+					o:depends({ [vid .. "-default_node"] = v1.id, [vid .. "-preproxy_enabled"] = "1" })
+				end
 			end
 		end
-		o:value("nil", translate("Close"))
-		o:value("main", translate("Preproxy Node"))
-		o.cfgvalue = get_cfgvalue(v.id, id)
-		o.write = get_write(v.id, id)
+	else
+		local tips = s:taboption("Main", DummyValue, "tips", " ")
+		tips.rawhtml = true
+		tips.cfgvalue = function(t, n)
+			return string.format('<a style="color: red">%s</a>', translate("There are no available nodes, please add or subscribe nodes first."))
+		end
+		tips:depends({ tcp_node = "nil", ["!reverse"] = true })
+		for k, v in pairs(shunt_list) do
+			tips:depends("udp_node", v.id)
+		end
+		for k, v in pairs(balancing_list) do
+			tips:depends("udp_node", v.id)
+		end
 	end
 end
 
 tcp_node_socks_port = s:taboption("Main", Value, "tcp_node_socks_port", translate("TCP Node") .. " Socks " .. translate("Listen Port"))
 tcp_node_socks_port.default = 1070
 tcp_node_socks_port.datatype = "port"
-
+tcp_node_socks_port:depends({ tcp_node = "nil", ["!reverse"] = true })
 --[[
 if has_v2ray or has_xray then
 	tcp_node_http_port = s:taboption("Main", Value, "tcp_node_http_port", translate("TCP Node") .. " HTTP " .. translate("Listen Port") .. " " .. translate("0 is not use"))
@@ -218,13 +283,66 @@ end
 
 s:tab("DNS", translate("DNS"))
 
+if api.is_finded("smartdns") then
+	dns_shunt = s:taboption("DNS", ListValue, "dns_shunt", translate("DNS Shunt"))
+	dns_shunt:value("dnsmasq", "Dnsmasq")
+	dns_shunt:value("smartdns", "SmartDNS")
+
+	group_domestic = s:taboption("DNS", Value, "group_domestic", translate("Domestic group name"))
+	group_domestic.placeholder = "local"
+	group_domestic:depends("dns_shunt", "smartdns")
+	group_domestic.description = translate("You only need to configure domestic DNS packets in SmartDNS and set it redirect or as Dnsmasq upstream, and fill in the domestic DNS group name here.")
+end
+
 o = s:taboption("DNS", Flag, "filter_proxy_ipv6", translate("Filter Proxy Host IPv6"), translate("Experimental feature."))
 o.default = "0"
 
+if api.is_finded("smartdns") then
+	o = s:taboption("DNS", DynamicList, "smartdns_remote_dns", translate("Remote DNS"))
+	o:value("tcp://1.1.1.1")
+	o:value("tcp://8.8.4.4")
+	o:value("tcp://8.8.8.8")
+	o:value("tcp://9.9.9.9")
+	o:value("tcp://208.67.222.222")
+	o:value("tls://1.1.1.1")
+	o:value("tls://8.8.4.4")
+	o:value("tls://8.8.8.8")
+	o:value("tls://9.9.9.9")
+	o:value("tls://208.67.222.222")
+	o:value("https://1.1.1.1/dns-query")
+	o:value("https://8.8.4.4/dns-query")
+	o:value("https://8.8.8.8/dns-query")
+	o:value("https://9.9.9.9/dns-query")
+	o:value("https://208.67.222.222/dns-query")
+	o:value("https://dns.adguard.com/dns-query,176.103.130.130")
+	o:value("https://doh.libredns.gr/dns-query,116.202.176.26")
+	o:value("https://doh.libredns.gr/ads,116.202.176.26")
+	o:depends("dns_shunt", "smartdns")
+	o.cfgvalue = function(self, section)
+		return m:get(section, self.option) or {"tcp://1.1.1.1"}
+	end
+	function o.write(self, section, value)
+		local t = {}
+		local t2 = {}
+		if type(value) == "table" then
+			local x
+			for _, x in ipairs(value) do
+				if x and #x > 0 then
+					if not t2[x] then
+						t2[x] = x
+						t[#t+1] = x
+					end
+				end
+			end
+		else
+			t = { value }
+		end
+		return DynamicList.write(self, section, t)
+	end
+end
+
 ---- DNS Forward Mode
 dns_mode = s:taboption("DNS", ListValue, "dns_mode", translate("Filter Mode"))
-dns_mode.rmempty = false
-dns_mode:reset_values()
 if api.is_finded("dns2tcp") then
 	dns_mode:value("dns2tcp", translatef("Requery DNS By %s", "TCP"))
 end
@@ -235,6 +353,9 @@ if has_xray then
 	dns_mode:value("xray", "Xray")
 end
 dns_mode:value("udp", translatef("Requery DNS By %s", "UDP"))
+if api.is_finded("smartdns") then
+	dns_mode:depends("dns_shunt", "dnsmasq")
+end
 
 o = s:taboption("DNS", ListValue, "v2ray_dns_mode", " ")
 o:value("tcp", "TCP")
@@ -327,12 +448,20 @@ if has_chnlist then
 	.. "<li>" .. translate("Remote DNS can avoid more DNS leaks, but some domestic domain names maybe to proxy!") .. "</li>"
 	.. "<li>" .. translate("Direct DNS Internet experience may be better, but DNS will be leaked!") .. "</li>"
 	.. "</ul>"
+	local _depends = {}
+	if api.is_finded("smartdns") then
+		_depends["dns_shunt"] = "dnsmasq"
+	end
+	if api.is_finded("chinadns-ng") then
+		_depends["chinadns_ng"] = false
+	end
+	when_chnroute_default_dns:depends(_depends)
 end
 
 o = s:taboption("DNS", Button, "clear_ipset", translate("Clear IPSET"), translate("Try this feature if the rule modification does not take effect."))
 o.inputstyle = "remove"
 function o.write(e, e)
-	luci.sys.call("[ -n \"$(nft list sets 2>/dev/null | grep \"gfwlist\")\" ] && /usr/share/" .. appname .. "/nftables.sh flush_nftset || /usr/share/" .. appname .. "/iptables.sh flush_ipset > /dev/null 2>&1 &")
+	luci.sys.call("[ -n \"$(nft list sets 2>/dev/null | grep \"gfwlist\")\" ] && sh /usr/share/" .. appname .. "/nftables.sh flush_nftset || sh /usr/share/" .. appname .. "/iptables.sh flush_ipset > /dev/null 2>&1 &")
 	luci.http.redirect(api.url("log"))
 end
 
@@ -419,6 +548,16 @@ trojan_loglevel:value("1", "info")
 trojan_loglevel:value("2", "warn")
 trojan_loglevel:value("3", "error")
 trojan_loglevel:value("4", "fatal")
+
+o = s:taboption("log", Flag, "advanced_log_feature", translate("Advanced log feature"), translate("For professionals only."))
+o.default = "0"
+o.rmempty = false
+local syslog = s:taboption("log", Flag, "sys_log", translate("Logging to system log"), translate("Logging to the system log for more advanced functions. For example, send logs to a dedicated log server."))
+syslog:depends("advanced_log_feature", "1")
+syslog.default = "0"
+syslog.rmempty = false
+local logpath = s:taboption("log", Value, "persist_log_path", translate("Persist log file directory"), translate("The path to the directory used to store persist log files, the \"/\" at the end can be omitted. Leave it blank to disable this feature."))
+logpath:depends({ ["advanced_log_feature"] = 1, ["sys_log"] = 0 })
 
 s:tab("faq", "FAQ")
 

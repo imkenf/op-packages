@@ -132,11 +132,17 @@ iface.default = "eth1"
 iface:depends("protocol", "_iface")
 
 local nodes_table = {}
+local balancers_table = {}
 for k, e in ipairs(api.get_valid_nodes()) do
-	if e.node_type == "normal" or e.protocol == "_balancing" then
+	if e.node_type == "normal" then
 		nodes_table[#nodes_table + 1] = {
 			id = e[".name"],
-			protocol = e["protocol"],
+			remarks = e["remark"]
+		}
+	end
+	if e.protocol == "_balancing" then
+		balancers_table[#balancers_table + 1] = {
+			id = e[".name"],
 			remarks = e["remark"]
 		}
 	end
@@ -167,20 +173,21 @@ probeInterval.description = translate("The interval between initiating probes. E
 
 -- 分流
 if #nodes_table > 0 then
-	o = s:option(ListValue, "main_node", string.format('<a style="color:red">%s</a>', translate("Preproxy Node")), translate("Set the node to be used as a pre-proxy. Each rule (including <code>Default</code>) has a separate switch that controls whether this rule uses the pre-proxy or not."))
+	o = s:option(Flag, "preproxy_enabled", translate("Preproxy"))
 	o:depends("protocol", "_shunt")
-	o:value("nil", translate("Close"))
-	dialerProxy = s:option(Flag, "dialerProxy", translate("dialerProxy"))
-	dialerProxy:depends({ type = "Xray", protocol = "_shunt" , })
+	o = s:option(Value, "main_node", string.format('<a style="color:red">%s</a>', translate("Preproxy Node")), translate("Set the node to be used as a pre-proxy. Each rule (including <code>Default</code>) has a separate switch that controls whether this rule uses the pre-proxy or not."))
+	o:depends("preproxy_enabled", "1")
+	for k, v in pairs(balancers_table) do
+		o:value(v.id, v.remarks)
+	end
 	for k, v in pairs(nodes_table) do
 		o:value(v.id, v.remarks)
-		--dialerProxy:depends({ type = "Xray", main_node = v.id })
 	end
 	o.default = "nil"
 end
 uci:foreach(appname, "shunt_rules", function(e)
 	if e[".name"] and e.remarks then
-		o = s:option(ListValue, e[".name"], string.format('* <a href="%s" target="_blank">%s</a>', api.url("shunt_rules", e[".name"]), e.remarks))
+		o = s:option(Value, e[".name"], string.format('* <a href="%s" target="_blank">%s</a>', api.url("shunt_rules", e[".name"]), e.remarks))
 		o:value("nil", translate("Close"))
 		o:value("_default", translate("Default"))
 		o:value("_direct", translate("Direct Connection"))
@@ -188,15 +195,16 @@ uci:foreach(appname, "shunt_rules", function(e)
 		o:depends("protocol", "_shunt")
 
 		if #nodes_table > 0 then
+			for k, v in pairs(balancers_table) do
+				o:value(v.id, v.remarks)
+			end
 			local pt = s:option(ListValue, e[".name"] .. "_proxy_tag", string.format('* <a style="color:red">%s</a>', e.remarks .. " " .. translate("Preproxy")))
 			pt:value("nil", translate("Close"))
 			pt:value("main", translate("Preproxy Node"))
 			pt.default = "nil"
 			for k, v in pairs(nodes_table) do
 				o:value(v.id, v.remarks)
-				if v.protocol ~= "_balancing" then
-					pt:depends(e[".name"], v.id)
-				end
+				pt:depends({ preproxy_enabled = "1", [e[".name"]] = v.id })
 			end
 		end
 	end
@@ -209,21 +217,22 @@ shunt_tips.cfgvalue = function(t, n)
 end
 shunt_tips:depends("protocol", "_shunt")
 
-default_node = s:option(ListValue, "default_node", string.format('* <a style="color:red">%s</a>', translate("Default")))
+local default_node = s:option(Value, "default_node", string.format('* <a style="color:red">%s</a>', translate("Default")))
+default_node:depends("protocol", "_shunt")
 default_node:value("_direct", translate("Direct Connection"))
 default_node:value("_blackhole", translate("Blackhole"))
-for k, v in pairs(nodes_table) do default_node:value(v.id, v.remarks) end
-default_node:depends("protocol", "_shunt")
 
 if #nodes_table > 0 then
+	for k, v in pairs(balancers_table) do
+		default_node:value(v.id, v.remarks)
+	end
 	local dpt = s:option(ListValue, "default_proxy_tag", string.format('* <a style="color:red">%s</a>', translate("Default Preproxy")), translate("When using, localhost will connect this node first and then use this node to connect the default node."))
 	dpt:value("nil", translate("Close"))
 	dpt:value("main", translate("Preproxy Node"))
 	dpt.default = "nil"
 	for k, v in pairs(nodes_table) do
-		if v.protocol ~= "_balancing" then
-			dpt:depends("default_node", v.id)
-		end
+		default_node:value(v.id, v.remarks)
+		dpt:depends({ preproxy_enabled = "1", default_node = v.id })
 	end
 end
 
@@ -739,6 +748,11 @@ wireguard_mtu = s:option(Value, "wireguard_mtu", translate("MTU"))
 wireguard_mtu.default = "1420"
 wireguard_mtu:depends({ type = "Xray", protocol = "wireguard" })
 
+if api.compare_versions(api.get_app_version("xray"), ">=", "1.8.0") then
+	wireguard_reserved = s:option(Value, "wireguard_reserved", translate("Reserved"), translate("Decimal numbers separated by \",\" or Base64-encoded strings."))
+	wireguard_reserved:depends({ type = "Xray", protocol = "wireguard" })
+end
+
 wireguard_keepAlive = s:option(Value, "wireguard_keepAlive", translate("Keep Alive"))
 wireguard_keepAlive.default = "0"
 wireguard_keepAlive:depends({ type = "Xray", protocol = "wireguard" })
@@ -919,10 +933,20 @@ mux:depends({ type = "Xray", protocol = "socks" })
 mux:depends({ type = "Xray", protocol = "shadowsocks" })
 mux:depends({ type = "Xray", protocol = "trojan" })
 
+-- [[ XUDP Mux ]]--
+xmux = s:option(Flag, "xmux", translate("Mux"))
+xmux.default = 1
+xmux:depends({ type = "Xray", protocol = "vless", tlsflow = "xtls-rprx-vision" })
+xmux:depends({ type = "Xray", protocol = "vless", tlsflow = "xtls-rprx-vision-udp443" })
+
 mux_concurrency = s:option(Value, "mux_concurrency", translate("Mux concurrency"))
 mux_concurrency.default = 8
 mux_concurrency:depends("mux", true)
 mux_concurrency:depends("smux", true)
+
+xudp_concurrency = s:option(Value, "xudp_concurrency", translate("XUDP Mux concurrency"))
+xudp_concurrency.default = 8
+xudp_concurrency:depends("xmux", true)
 
 smux_idle_timeout = s:option(Value, "smux_idle_timeout", translate("Mux idle timeout"))
 smux_idle_timeout.default = 60
