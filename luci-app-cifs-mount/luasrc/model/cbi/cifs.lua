@@ -1,8 +1,6 @@
 local fs = require "nixio.fs"
 
-m = Map("cifs")
-m.title = translate("Mount SMB/CIFS Netshare")
-m.description = translate("Mount SMB/CIFS Netshare for OpenWrt")
+m = Map("cifs", translate("Mount NetShare"), translate("Mount NetShare for OpenWrt"))
 
 s = m:section(TypedSection, "cifs")
 s.anonymous = true
@@ -13,7 +11,7 @@ switch.rmempty = false
 workgroup = s:option(Value, "workgroup", translate("Workgroup"))
 workgroup.default = "WORKGROUP"
 
-s = m:section(TypedSection, "natshare", translate("CIFS/SMB Netshare"))
+s = m:section(TypedSection, "natshare", translate("Mount CIFS/SMB"))
 s.anonymous = true
 s.addremove = true
 s.template = "cbi/tblsection"
@@ -23,6 +21,7 @@ server.size = 12
 server.rmempty = false
 
 name = s:option(Value, "name", translate("Share Folder"))
+name.datatype = "minlength(1)"
 name.rmempty = false
 name.size = 8
 
@@ -30,14 +29,16 @@ pth = s:option(Value, "natpath", translate("Mount Path"))
 if nixio.fs.access("/etc/config/fstab") then
         pth.titleref = luci.dispatcher.build_url("admin", "system", "fstab")
 end
+pth.datatype = "minlength(2)"
 pth.rmempty = false
 pth.size = 10
 
 smbver = s:option(Value, "smbver", translate("SMB Version"))
 smbver.rmempty = false
-smbver:value("1.0", "SMB v1")
-smbver:value("2.0", "SMB v2")
-smbver:value("3.0", "SMB v3")
+smbver:value("1.0","SMB v1")
+smbver:value("2.0","SMB v2")
+smbver:value("3.0","SMB v3")
+smbver:value("nil","None")
 smbver.default = "2.0"
 smbver.size = 3
 
@@ -59,6 +60,41 @@ users.default = "guest"
 
 pwd = s:option(Value, "pwd", translate("Password"))
 pwd.rmempty = true
+pwd.password = true
+pwd.size = 8
+
+s = m:section(TypedSection, "davfs", translate("Mount WebDAV"))
+s.anonymous = true
+s.addremove = true
+s.template = "cbi/tblsection"
+
+server = s:option(Value, "url", translate("URL"))
+server.datatype = "minlength(1)"
+server.size = 16
+server.rmempty = false
+
+pth = s:option(Value, "mountpoint", translate("Mount Path"))
+if nixio.fs.access("/etc/config/fstab") then
+        pth.titleref = luci.dispatcher.build_url("admin", "system", "fstab")
+end
+pth.datatype = "minlength(2)"
+pth.rmempty = false
+pth.size = 10
+
+agm = s:option(Value, "arguments", translate("Arguments"))
+agm:value("ro", translate("Read Only"))
+agm:value("rw", translate("Read/Write"))
+agm.rmempty = true
+agm.default = "ro"
+
+users = s:option(Value, "username", translate("User"))
+users:value("none", "Guest")
+users.rmempty = true
+users.default = "none"
+
+pwd = s:option(Value, "password", translate("Password"))
+pwd.rmempty = true
+pwd.password = true
 pwd.size = 8
 
 return m
