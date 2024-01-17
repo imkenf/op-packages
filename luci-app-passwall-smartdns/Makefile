@@ -5,7 +5,7 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=luci-app-passwall
+PKG_NAME:=luci-app-passwall-smartdns
 PKG_VERSION:=4.72-2
 PKG_RELEASE:=
 
@@ -34,7 +34,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_Xray \
 	CONFIG_PACKAGE_$(PKG_NAME)_INCLUDE_Xray_Plugin
 
-LUCI_TITLE:=LuCI support for PassWall
+LUCI_TITLE:=LuCI support for PassWall smartdns-dev
 LUCI_PKGARCH:=all
 LUCI_DEPENDS:=+coreutils +coreutils-base64 +coreutils-nohup +curl \
 	+chinadns-ng +dns2socks +dns2tcp +ip-full +libuci-lua +lua +luci-compat +luci-lib-jsonc \
