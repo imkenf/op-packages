@@ -961,7 +961,7 @@ function to_move(app_name,file)
 end
 
 function get_version()
-	return sys.exec("echo -n $(opkg list-installed luci-app-passwall |awk '{print $3}')")
+	return sys.exec("echo -n $(opkg list-installed luci-app-passwall-smartdns |awk '{print $3}')")
 end
 
 function to_check_self()
