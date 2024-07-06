@@ -1,0 +1,8 @@
+#mwan3-service-status > .alert-message {
+	display: inline-block;
+	margin: 1rem;
+	padding: 1rem;
+	width: 15rem;
+	vertical-align: middle;
+	text-align: center; /* 添加这一行来使文本居中 */
+}
