@@ -21,7 +21,7 @@ PKG_MAINTAINER:=Nick Peng <pymumu@gmail.com>
 PKG_VERSION:=1.2024.45
 PKG_RELEASE:=1
 
-LUCI_TITLE:=LuCI for smartdns
+LUCI_TITLE:=LuCI for smartdns new
 LUCI_DESCRIPTION:=Provides Luci for smartdns
 LUCI_DEPENDS:=+smartdns +luci-compat
 LUCI_PKGARCH:=all
