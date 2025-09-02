@@ -17,7 +17,7 @@ PKG_MAINTAINER:=Nate Ding <natelol@github.com>
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
 
-LUCI_DEPENDS:=+luci-base +rpcd +rpcd-mod-uci
+LUCI_DEPENDS:=+luci-base +rpcd
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
