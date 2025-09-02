@@ -1,0 +1,9 @@
+{
+	"name": "cloudflare.com-v5",
+	"ipv4": {
+		"url": "update_cloudflare_com_v5.sh"
+	},
+	"ipv6": {
+		"url": "update_cloudflare_com_v5.sh"
+	}
+}
