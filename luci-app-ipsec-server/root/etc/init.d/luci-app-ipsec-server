@@ -176,13 +176,26 @@ start() {
 	}
 	unset user
 
-	/usr/lib/ipsec/starter --daemon charon --nofork > /dev/null 2>&1 &
-	# try standard ipsec wrapper when available
+	# Start strongSwan IPSec service
 	if command -v ipsec >/dev/null 2>&1; then
-		ipsec start >/dev/null 2>&1 || true
+		ipsec start >/dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			# Fallback to direct starter launch
+			/usr/lib/ipsec/starter --daemon charon >/dev/null 2>&1 &
+		fi
+	else
+		/usr/lib/ipsec/starter --daemon charon >/dev/null 2>&1 &
 	fi
 
+	# Wait a moment for services to start
+	sleep 2
+
+	# Configure firewall rules
 	uci -q batch <<-EOF >/dev/null
+		delete firewall.ipsec_ike
+		delete firewall.ipsec_l2tp
+		delete firewall.ipsec_to_lan
+		delete firewall.ipsec_to_wan
 		set firewall.ipsec_ike=rule
 		set firewall.ipsec_ike.name="ipsec-ike-udp"
 		set firewall.ipsec_ike.src="wan"
@@ -190,8 +203,8 @@ start() {
 		set firewall.ipsec_ike.dest_port="500 4500"
 		set firewall.ipsec_ike.target="ACCEPT"
 		set firewall.ipsec_ike.family="ipv4"
-		delete firewall.ipsec_l2tp
 	EOF
+
 	[ "${l2tp_enabled}" = 1 ] && {
 		uci -q batch <<-EOF >/dev/null
 			set firewall.ipsec_l2tp=rule
@@ -203,6 +216,7 @@ start() {
 			set firewall.ipsec_l2tp.family="ipv4"
 		EOF
 	}
+
 	uci -q batch <<-EOF >/dev/null
 		set firewall.ipsec_to_lan=forwarding
 		set firewall.ipsec_to_lan.src="ipsecserver"
@@ -212,7 +226,9 @@ start() {
 		set firewall.ipsec_to_wan.dest="wan"
 		commit firewall
 	EOF
+
 	/etc/init.d/firewall reload >/dev/null 2>&1
+	sleep 1
 
 	uci -q batch <<-EOF >/dev/null
 		set network.ipsec_server.ipaddr="${vt_clientip%.*}.1"
@@ -223,10 +239,23 @@ start() {
 
 stop() {
 	ifdown ipsec_server > /dev/null 2>&1
+
+	# Stop strongSwan services
+	if command -v ipsec >/dev/null 2>&1; then
+		ipsec stop >/dev/null 2>&1 || true
+	fi
+
+	# Kill remaining strongSwan processes
+	for proc in charon starter; do
+		pkill -x $proc >/dev/null 2>&1 || true
+	done
+
+	# Stop L2TP service
+	pkill -x xl2tpd >/dev/null 2>&1 || true
 	sed -i '/l2tp-server/d' ${CHAP_SECRETS} 2>/dev/null
-	top -bn1 | grep "${L2TP_PATH}" | grep -v "grep" | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	rm -rf ${L2TP_PATH}
-	busybox ps -w | grep "/usr/lib/ipsec" | grep -v "grep" | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
+
+	# Remove firewall rules
 	uci -q batch <<-EOF >/dev/null
 		delete firewall.ipsec_ike
 		delete firewall.ipsec_l2tp
@@ -235,6 +264,8 @@ stop() {
 		commit firewall
 	EOF
 	/etc/init.d/firewall reload >/dev/null 2>&1
+
+	# Restore libipsec symlink
 	ln -s "libipsec.so.0.0.0" "/usr/lib/ipsec/libipsec.so.0" >/dev/null 2>&1
 }
 
