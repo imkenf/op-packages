@@ -177,6 +177,10 @@ start() {
 	unset user
 
 	/usr/lib/ipsec/starter --daemon charon --nofork > /dev/null 2>&1 &
+	# try standard ipsec wrapper when available
+	if command -v ipsec >/dev/null 2>&1; then
+		ipsec start >/dev/null 2>&1 || true
+	fi
 
 	uci -q batch <<-EOF >/dev/null
 		set firewall.ipsec_ike=rule

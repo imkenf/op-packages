@@ -33,6 +33,11 @@ o = s:taboption("options", Value, "attemptPeriod", translate("Attempt Cycle"), t
 o = s:taboption("options", Value, "banLength", translate("Ban Period"), translate("how long a ban exist once the attempt threshold is exceeded"))
 
 o = s:taboption("options", ListValue, "logLevel", translate("Log Level"))
+o.default = "1"
+o:value("0", translate("Silent"))
+o:value("1", translate("Default"))
+o:value("2", translate("Verbose"))
+o:value("3", translate("Debug"))
 -- nftables custom names
 o = s:taboption("options", Value, "nftTable", translate("nft Table Name"))
 o.datatype = "hostname"
@@ -52,12 +57,6 @@ o.inputstyle = "reset"
 function o.write(self, section)
   luci.util.exec("/usr/sbin/beardropper -m wipe >/dev/null 2>&1 &")
 end
-
-o.default = "1"
-o:value("0", translate("Silent"))
-o:value("1", translate("Default"))
-o:value("2", translate("Verbose"))
-o:value("3", translate("Debug"))
 
 
 o = s:taboption("blocked", Value, "blocked", translate("Blocked IP List"))

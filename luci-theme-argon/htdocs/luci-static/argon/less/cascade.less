@@ -2511,21 +2511,23 @@ body:not(.Interfaces) .cbi-rowstyle-2:first-child {
 }
 
 .cbi-progressbar::after {
-    font-family: monospace;
-    font-size: 1em;
-    font-weight: bold;
-    font-size-adjust: .38;
-    line-height: 1.5rem;
+    font-family: inherit;
+    font-size: .9rem;
+    font-weight: 600;
+    line-height: normal;
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
     content: attr(title);
-    text-align: center;
-    white-space: pre;
+    white-space: nowrap;
     text-overflow: ellipsis;
+    pointer-events: none;
 }
 
 #modal_overlay {
@@ -2566,8 +2568,8 @@ body:not(.Interfaces) .cbi-rowstyle-2:first-child {
 
 .modal>pre,
 .modal>textarea {
+    font-family: inherit;
     font-size: 1rem;
-    font-size-adjust: .35;
     overflow: auto;
     margin-bottom: .5em;
     padding: 8.5px;
@@ -2789,7 +2791,7 @@ td>.ifacebadge,
 
 /* textarea */
 .cbi-input-textarea {
-    font-family: monospace;
+    font-family: inherit;
     width: 100%;
     font-size: 0.875rem;
     min-height: 14rem;
@@ -2798,8 +2800,9 @@ td>.ifacebadge,
 }
 
 #syslog {
+    font-family: inherit;
     font-size: small;
-    line-height: 1.25;
+    line-height: 1.5;
     overflow-y: hidden;
     width: 100%;
     min-height: 15rem;
