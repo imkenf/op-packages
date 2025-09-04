@@ -75,15 +75,3 @@ msgstr "未运行"
 
 msgid "RUNNING"
 msgstr "运行中"
-
-msgid "Server IP"
-msgstr "服务端 IP"
-
-msgid "Client IP"
-msgstr "客户端 IP"
-
-msgid "Static Routes"
-msgstr "静态路由"
-
-msgid "Interface"
-msgstr "接口"

@@ -18,14 +18,17 @@ if fs.access(session_path) then
 end
 
 local blacklist = {}
-local uc = require "luci.model.uci".cursor()
-uc:foreach("firewall", "rule", function(s)
-	if s.name and s.name:match("^xl2tpd%-blacklist%-%") and s.src_ip then
-		local t = {}
-		t.ip = s.src_ip
-		blacklist[#blacklist + 1] = t
+local firewall_user_path = "/etc/firewall.user"
+if fs.access(firewall_user_path) then
+	for line in io.lines(firewall_user_path) do
+		local m = line:match('xl2tpd%-blacklist%-([^\n]+)')
+		if m then
+			local t = {}
+			t.ip = m
+			blacklist[#blacklist + 1] = t
+		end
 	end
-end)
+end
 
 f = SimpleForm("processes")
 f.reset = false
@@ -46,16 +49,8 @@ function _blacklist.render(e, t, a)
 end
 function _blacklist.write(t, s)
 	local e = t.map:get(s, "remote_ip")
-	local sid = uc:add("firewall", "rule")
-	uc:set("firewall", sid, "name", "xl2tpd-blacklist-" .. e)
-	uc:set("firewall", sid, "src", "wan")
-	uc:set("firewall", sid, "family", "ipv4")
-	uc:set("firewall", sid, "src_ip", e)
-	uc:set("firewall", sid, "proto", "udp")
-	uc:set("firewall", sid, "dest_port", "500 4500 1701")
-	uc:set("firewall", sid, "target", "DROP")
-	uc:commit("firewall")
-	luci.util.execi("/etc/init.d/firewall reload")
+	luci.util.execi("echo 'iptables -I INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP ## xl2tpd-blacklist-%s' >> /etc/firewall.user" % {e, e})
+	luci.util.execi("iptables -I INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP" % {e})
 	luci.util.execi("rm -f " .. t.map:get(s, "session_file"))
 	null, t.tag_error[s] = luci.sys.process.signal(t.map:get(s, "pid"), 9)
 	luci.http.redirect(o.build_url("admin/vpn/ipsec-server/online"))
@@ -80,17 +75,8 @@ function _blacklist2.render(e, t, a)
 end
 function _blacklist2.write(t, s)
 	local e = t.map:get(s, "ip")
-	local to_delete = {}
-	uc:foreach("firewall", "rule", function(s)
-		if s.name == ("xl2tpd-blacklist-" .. e) then
-			to_delete[#to_delete + 1] = s[".name"]
-		end
-	end)
-	for _, id in ipairs(to_delete) do
-		uc:delete("firewall", id)
-	end
-	uc:commit("firewall")
-	luci.util.execi("/etc/init.d/firewall reload")
+	luci.util.execi("sed -i -e '/## xl2tpd-blacklist-%s/d' /etc/firewall.user" % {e})
+	luci.util.execi("iptables -D INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP" % {e})
 	luci.http.redirect(o.build_url("admin/vpn/ipsec-server/online"))
 end
 

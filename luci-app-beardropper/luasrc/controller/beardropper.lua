@@ -5,13 +5,9 @@ function index()
 	return
     end
     entry({"admin", "services", "beardropper"}, alias("admin", "services", "beardropper", "setting"),_("BearDropper"), 20).dependent = true
-    entry({"admin", "services", "beardropper", "status"}, call("act_status")).acl_depends = { "luci-app-beardropper" }
-    local e1 = entry({"admin", "services", "beardropper", "setting"}, cbi("beardropper/setting"), _("Setting"), 30)
-    e1.leaf = true
-    e1.acl_depends = { "luci-app-beardropper" }
-    local e2 = entry({"admin", "services", "beardropper", "log"}, form("beardropper/log"),_("Log"),40)
-    e2.leaf = true
-    e2.acl_depends = { "luci-app-beardropper" }
+    entry({"admin", "services", "beardropper", "status"}, call("act_status"))
+    entry({"admin", "services", "beardropper", "setting"}, cbi("beardropper/setting"), _("Setting"), 30).leaf= true
+    entry({"admin", "services", "beardropper", "log"}, form("beardropper/log"),_("Log"),40).leaf= true
     --entry:
 end
 

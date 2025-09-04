@@ -1,5 +1,5 @@
 
-m = Map("beardropper", translate("BearDropper"),
+m = Map("beardropper", translate("BearDropper"), 
 translate("luci-app-beardropper, the LuCI app built with the elegant firewall rule generation on-the-fly script bearDropper. <br /> <br /> Should you have any questions, please refer to the repo: ")..[[<a href="https://github.com/NateLol/luci-app-bearDropper" target="_blank">luci-app-beardropper</a>]]
 )
 m:chain("luci")
@@ -10,7 +10,7 @@ s = m:section(TypedSection, "beardropper", translate(""))
 s.anonymous = true
 s.addremove = false
 
--- TABS
+-- TABS 
 s:tab("options", translate("Options"))
 s:tab("blocked", translate("Blocked IP"))
 
@@ -38,25 +38,6 @@ o:value("0", translate("Silent"))
 o:value("1", translate("Default"))
 o:value("2", translate("Verbose"))
 o:value("3", translate("Debug"))
--- nftables custom names
-o = s:taboption("options", Value, "nftTable", translate("nft Table Name"))
-o.datatype = "hostname"
-o.default = "beardropper"
-
-o = s:taboption("options", Value, "nftSet", translate("nft Set Name"))
-o.datatype = "hostname"
-o.default = "blocked4"
-
--- whitelist
-o = s:taboption("options", DynamicList, "whitelist", translate("Whitelist IPs"), translate("Exact IPv4 addresses that should never be banned"))
-o.datatype = "ip4addr"
-
--- actions
-o = s:taboption("options", Button, "btn_wipe", translate("Unban All"))
-o.inputstyle = "reset"
-function o.write(self, section)
-  luci.util.exec("/usr/sbin/beardropper -m wipe >/dev/null 2>&1 &")
-end
 
 
 o = s:taboption("blocked", Value, "blocked", translate("Blocked IP List"))
@@ -65,7 +46,7 @@ o.rows=40
 o.wrap="off"
 o.readonly="true"
 function o.cfgvalue(e, e)
-	return luci.sys.exec("cat /tmp/beardropper.bddb | awk /'=1/'| awk -F '=' '{print $1}' | awk '{print substr($0,6)}' | awk 'gsub(/_/,\".\",$0)'")
+	return luci.sys.exec("cat /tmp/beardropper.bddb | awk /'=1/'| awk -F '=' '{print $1}' | awk '{print substr($0,6)}' | awk 'gsub(/_/,\":\",$0)'")
 end
 
 

@@ -12,14 +12,14 @@ o.cfgvalue = function(t, n)
 	return '<font class="ipsec-server_status"></font>'
 end
 
-enabled = s:option(Flag, "enabled", translate("Enabled"))
+enabled = s:option(Flag, "enabled", translate("Enable"))
 enabled.description = translate("Use a client that supports IPSec Xauth PSK (iOS or Android) to connect to this server.")
 enabled.default = 0
 enabled.rmempty = false
 
 clientip = s:option(Value, "clientip", translate("VPN Client IP"))
 clientip.description = translate("VPN Client reserved started IP addresses with the same subnet mask, such as: 192.168.100.10/24")
-clientip.datatype = "ipmask4"
+clientip.datatype = "ip4addr"
 clientip.optional = false
 clientip.rmempty = false
 
@@ -33,7 +33,7 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 		return '<font class="l2tp_status"></font>'
 	end
 
-	o = s:option(Flag, "l2tp_enable", "L2TP " .. translate("Enabled"))
+	o = s:option(Flag, "l2tp_enable", "L2TP " .. translate("Enable"))
 	o.description = translate("Use a client that supports L2TP over IPSec PSK to connect to this server.")
 	o.default = 0
 	o.rmempty = false
@@ -51,7 +51,7 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 	o.default = "192.168.101.10-20"
 	o.placeholder = o.default
 
-	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then
+	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then 
 		o = s:option(DummyValue, "_o", " ")
 		o.rawhtml = true
 		o.cfgvalue = function(t, n)

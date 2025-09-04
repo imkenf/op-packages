@@ -6,9 +6,9 @@ config beardropper
 	option fileStateType 'bddb'
 	option fileStateTempPrefix '/tmp/beardropper'
 	option fileStatePersistPrefix '/etc/beardropper'
-	option nftTable 'beardropper'
-	option nftSet 'blocked4'
-	# nftables-only：无需设置 iptables 钩子或目标
+	list firewallHookChain 'input_wan_rule:1'
+	list firewallHookChain 'forwarding_wan_rule:1'
+	option firewallTarget 'DROP'
 	list logRegex 's/[`$"\'\'']//g'
 	list logRegex '/has invalid shell, rejected$/d'
 	list logRegex '/^[A-Za-z ]+[0-9: ]+authpriv.warn dropbear\[.+([0-9]+\.){3}[0-9]+/p'
