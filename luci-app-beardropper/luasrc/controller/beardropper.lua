@@ -13,7 +13,15 @@ end
 
 function act_status()
     local e={}
-    e.running = luci.sys.call("pgrep -f /usr/sbin/beardropper >/dev/null")==0
+    -- 使用 procd 方式检查服务状态
+    local status = luci.sys.call("/etc/init.d/beardropper status >/dev/null 2>&1")
+    e.running = (status == 0)
+
+    -- 备用检查方法：检查进程是否存在
+    if not e.running then
+        e.running = luci.sys.call("pgrep -f /usr/sbin/beardropper >/dev/null 2>&1") == 0
+    end
+
     luci.http.prepare_content("application/json")
     luci.http.write_json(e)
 end

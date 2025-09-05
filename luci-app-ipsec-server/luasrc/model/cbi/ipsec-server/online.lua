@@ -49,8 +49,37 @@ function _blacklist.render(e, t, a)
 end
 function _blacklist.write(t, s)
 	local e = t.map:get(s, "remote_ip")
-	luci.util.execi("echo 'iptables -I INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP ## xl2tpd-blacklist-%s' >> /etc/firewall.user" % {e, e})
-	luci.util.execi("iptables -I INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP" % {e})
+	local rule_name = "ipsec_blacklist_" .. e:gsub("%.", "_")
+
+	-- 检测防火墙类型
+	local fw_type = "fw3"
+	if nixio.fs.access("/sbin/fw4") and nixio.fs.access("/usr/share/firewall4/main.uc") then
+		fw_type = "fw4"
+	end
+
+	-- 添加 UCI 防火墙规则阻止该IP
+	luci.util.execi("uci -q delete firewall.%s" % {rule_name})
+	luci.util.execi("uci -q set firewall.%s=rule" % {rule_name})
+	luci.util.execi("uci -q set firewall.%s.name='Block IPSec Client %s'" % {rule_name, e})
+	luci.util.execi("uci -q set firewall.%s.src_ip='%s'" % {rule_name, e})
+	luci.util.execi("uci -q set firewall.%s.proto='udp'" % {rule_name})
+	luci.util.execi("uci -q set firewall.%s.dest_port='500 4500 1701'" % {rule_name})
+	luci.util.execi("uci -q set firewall.%s.target='DROP'" % {rule_name})
+	luci.util.execi("uci -q set firewall.%s.enabled='1'" % {rule_name})
+	luci.util.execi("uci -q commit firewall")
+
+	-- 重新加载防火墙
+	if fw_type == "fw4" then
+		luci.util.execi("fw4 reload >/dev/null 2>&1")
+	else
+		luci.util.execi("/etc/init.d/firewall reload >/dev/null 2>&1")
+	end
+
+	-- 向后兼容：同时添加到 firewall.user (仅对 fw3)
+	if fw_type == "fw3" then
+		luci.util.execi("echo 'iptables -I INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP ## xl2tpd-blacklist-%s' >> /etc/firewall.user" % {e, e})
+	end
+
 	luci.util.execi("rm -f " .. t.map:get(s, "session_file"))
 	null, t.tag_error[s] = luci.sys.process.signal(t.map:get(s, "pid"), 9)
 	luci.http.redirect(o.build_url("admin/vpn/ipsec-server/online"))
@@ -75,8 +104,31 @@ function _blacklist2.render(e, t, a)
 end
 function _blacklist2.write(t, s)
 	local e = t.map:get(s, "ip")
-	luci.util.execi("sed -i -e '/## xl2tpd-blacklist-%s/d' /etc/firewall.user" % {e})
-	luci.util.execi("iptables -D INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP" % {e})
+	local rule_name = "ipsec_blacklist_" .. e:gsub("%.", "_")
+
+	-- 检测防火墙类型
+	local fw_type = "fw3"
+	if nixio.fs.access("/sbin/fw4") and nixio.fs.access("/usr/share/firewall4/main.uc") then
+		fw_type = "fw4"
+	end
+
+	-- 删除 UCI 防火墙规则
+	luci.util.execi("uci -q delete firewall.%s" % {rule_name})
+	luci.util.execi("uci -q commit firewall")
+
+	-- 重新加载防火墙
+	if fw_type == "fw4" then
+		luci.util.execi("fw4 reload >/dev/null 2>&1")
+	else
+		luci.util.execi("/etc/init.d/firewall reload >/dev/null 2>&1")
+	end
+
+	-- 向后兼容：清理 firewall.user (仅对 fw3)
+	if fw_type == "fw3" then
+		luci.util.execi("sed -i -e '/## xl2tpd-blacklist-%s/d' /etc/firewall.user" % {e})
+		luci.util.execi("iptables -D INPUT -s %s -p udp -m multiport --dports 500,4500,1701 -j DROP 2>/dev/null" % {e})
+	end
+
 	luci.http.redirect(o.build_url("admin/vpn/ipsec-server/online"))
 end
 

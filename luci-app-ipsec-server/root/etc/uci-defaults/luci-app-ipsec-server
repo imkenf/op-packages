@@ -1,12 +1,27 @@
 #!/bin/sh
 
-uci -q batch <<-EOF >/dev/null
-	delete firewall.luci_app_ipsec_server
-	set firewall.luci_app_ipsec_server=include
-	set firewall.luci_app_ipsec_server.type=script
-	set firewall.luci_app_ipsec_server.path=/var/etc/ipsecvpn.include
-	set firewall.luci_app_ipsec_server.reload=1
-EOF
+# 检测防火墙类型
+if [ -x "/sbin/fw4" ] && [ -f "/usr/share/firewall4/main.uc" ]; then
+	FW_TYPE="fw4"
+else
+	FW_TYPE="fw3"
+fi
+
+# fw4 不需要 include 脚本，fw3 需要保持兼容
+if [ "$FW_TYPE" = "fw3" ]; then
+	uci -q batch <<-EOF >/dev/null
+		delete firewall.luci_app_ipsec_server
+		set firewall.luci_app_ipsec_server=include
+		set firewall.luci_app_ipsec_server.type=script
+		set firewall.luci_app_ipsec_server.path=/var/etc/ipsecvpn.include
+		set firewall.luci_app_ipsec_server.reload=1
+		commit firewall
+	EOF
+else
+	# fw4: 清理可能存在的 include 配置
+	uci -q delete firewall.luci_app_ipsec_server >/dev/null 2>&1
+	uci -q commit firewall >/dev/null 2>&1
+fi
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@luci-app-ipsec-server[-1]

@@ -16,7 +16,8 @@ LUCI_DEPENDS:=+kmod-tun +luci-lib-jsonc +xl2tpd +strongswan \
   +PACKAGE_strongswan:strongswan-mod-kernel-libipsec \
   +PACKAGE_strongswan:strongswan-mod-openssl \
   +PACKAGE_strongswan:strongswan-mod-xauth-generic \
-  +(PACKAGE_strongswan-mod-kdf||PACKAGE_strongswan-mod-openssl||PACKAGE_strongswan-mod-wolfssl):strongswan-minimal
+  +(PACKAGE_strongswan-mod-kdf||PACKAGE_strongswan-mod-openssl||PACKAGE_strongswan-mod-wolfssl):strongswan-minimal \
+  +firewall4
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/conffiles

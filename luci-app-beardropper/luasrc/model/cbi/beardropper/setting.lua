@@ -1,5 +1,5 @@
 
-m = Map("beardropper", translate("BearDropper"), 
+m = Map("beardropper", translate("BearDropper"),
 translate("luci-app-beardropper, the LuCI app built with the elegant firewall rule generation on-the-fly script bearDropper. <br /> <br /> Should you have any questions, please refer to the repo: ")..[[<a href="https://github.com/NateLol/luci-app-bearDropper" target="_blank">luci-app-beardropper</a>]]
 )
 m:chain("luci")
@@ -10,7 +10,7 @@ s = m:section(TypedSection, "beardropper", translate(""))
 s.anonymous = true
 s.addremove = false
 
--- TABS 
+-- TABS
 s:tab("options", translate("Options"))
 s:tab("blocked", translate("Blocked IP"))
 
@@ -38,6 +38,12 @@ o:value("0", translate("Silent"))
 o:value("1", translate("Default"))
 o:value("2", translate("Verbose"))
 o:value("3", translate("Debug"))
+
+o = s:taboption("options", ListValue, "firewallBackend", translate("Firewall Backend"), translate("Select firewall backend (auto-detect recommended)"))
+o.default = "auto"
+o:value("auto", translate("Auto-detect"))
+o:value("fw3", translate("fw3 (iptables)"))
+o:value("fw4", translate("fw4 (nftables)"))
 
 
 o = s:taboption("blocked", Value, "blocked", translate("Blocked IP List"))

@@ -1,11 +1,21 @@
 #!/bin/sh
 
+# 设置 ucitrack 以便配置变更时自动重启服务
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@beardropper[-1]
 	add ucitrack beardropper
 	set ucitrack.@beardropper[-1].init=beardropper
+	set ucitrack.@beardropper[-1].exec='/etc/init.d/beardropper reload'
 	commit ucitrack
 EOF
 
-rm -rf /tmp/luci-*
+# 确保配置文件存在且具有正确权限
+[ ! -f /etc/config/beardropper ] && {
+	touch /etc/config/beardropper
+	chmod 644 /etc/config/beardropper
+}
+
+# 清理 LuCI 缓存
+rm -rf /tmp/luci-* 2>/dev/null
+
 exit 0

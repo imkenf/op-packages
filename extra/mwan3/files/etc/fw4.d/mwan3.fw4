@@ -1,0 +1,25 @@
+#!/usr/bin/nft -f
+
+# MWAN3 fw4 integration for OpenWrt 24.10+
+# This file defines the nftables integration for mwan3
+
+# Include mwan3 tables in the global firewall configuration
+include "/usr/share/mwan3/fw4/mwan3-rules.nft"
+
+# Hook definitions for mwan3 integration
+table inet fw4 {
+	chain mangle_prerouting {
+		# Jump to mwan3 hook for multi-WAN processing
+		jump mwan3_hook comment "MWAN3 multi-WAN hook"
+	}
+
+	chain mangle_output {
+		# Jump to mwan3 hook for output processing
+		jump mwan3_hook comment "MWAN3 output hook"
+	}
+
+	chain mwan3_hook {
+		# Placeholder chain - populated by mwan3 service
+		return comment "MWAN3 hook placeholder"
+	}
+}

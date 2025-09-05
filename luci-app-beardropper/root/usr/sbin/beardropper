@@ -2,7 +2,7 @@
 #
 # beardropper - dropbear log parsing ban agent for OpenWRT (Chaos Calmer rewrite of dropBrute.sh)
 #   http://github.com/robzr/bearDropper  -- Rob Zwissler 11/2015
-# 
+#
 #   - lightweight, no dependencies, busybox ash + native OpenWRT commands
 #   - uses uci for configuration, overrideable via command line arguments
 #   - runs continuously in background (via init script) or periodically (via cron)
@@ -10,14 +10,14 @@
 #   - Whitelist IP or CIDR entries (TBD) in uci config file
 #   - Records state file to tmpfs and intelligently syncs to persistent storage (can disable)
 #   - Persistent sync routines are optimized to avoid excessive writes (persistentStateWritePeriod)
-#   - Every run occurs in one of the following modes. If not specified, interval mode (24 hours) is 
+#   - Every run occurs in one of the following modes. If not specified, interval mode (24 hours) is
 #     the default when not specified (the init script specifies follow mode via command line)
-# 
+#
 #     "follow" mode follows syslog to process entries as they happen; generally launched via init
 #        script. Responds the fastest, runs the most efficiently, but is always in memory.
-#     "interval" mode only processes entries going back the specified interval; requires 
+#     "interval" mode only processes entries going back the specified interval; requires
 #       more processing than today mode, but responds more accurately. Use with cron.
-#     "today" mode looks at log entries from the day it is being run, simple and lightweight, 
+#     "today" mode looks at log entries from the day it is being run, simple and lightweight,
 #       generally run from cron periodically (same simplistic behavior as dropBrute.sh)
 #     "entire" mode runs through entire contents of the syslog ring buffer
 #     "wipe" mode tears down the firewall rules and removes the state files
@@ -25,10 +25,10 @@
 # Load UCI config variable, or use default if not set
 # Args: $1 = variable name (also uci option name), $2 = default_value
 uciSection='beardropper.@[0]'
-uciLoadVar () { 
+uciLoadVar () {
   local getUci
-  getUci=`uci -q get ${uciSection}."$1"` || getUci="$2" 
-  eval $1=\'$getUci\'; 
+  getUci=`uci -q get ${uciSection}."$1"` || getUci="$2"
+  eval $1=\'$getUci\';
 }
 uciLoad() {
   local tFile=`mktemp` delim="
@@ -60,25 +60,154 @@ uciLoadVar fileStatePersistPrefix /etc/beardropper
 firewallHookChains="`uciLoad -d \  firewallHookChain input_wan_rule:1 forwarding_wan_rule:1`"
 uciLoadVar firewallTarget DROP
 
-# Not commonly changed, but changeable via uci or cmdline (primarily 
+# Not commonly changed, but changeable via uci or cmdline (primarily
 # to enable multiple parallel runs with different parameters)
 uciLoadVar firewallChain beardropper
+uciLoadVar firewallBackend auto
 
-# Advanced variables, changeable via uci only (no cmdline), it is 
+# Advanced variables, changeable via uci only (no cmdline), it is
 # unlikely that these will need to be changed, but just in case...
 #
 uciLoadVar syslogTag "beardropper[$$]"
 # how often to attempt to expire bans when in follow mode
-uciLoadVar followModeCheckInterval 30m	
+uciLoadVar followModeCheckInterval 30m
 uciLoadVar cmdLogread 'logread'		# for tuning, ex: "logread -l250"
 uciLoadVar cmdLogreadEba 'logread'	# for "Exit before auth:" backscanning
 uciLoadVar formatLogDate '%b %e %H:%M:%S %Y'	# used to convert syslog dates
 uciLoadVar formatTodayLogDateRegex '^%a %b %e ..:..:.. %Y'	# filter for today mode
 
+# Firewall backend detection and abstraction
+#
+# Auto-detect firewall backend (fw3/iptables vs fw4/nftables)
+detectFirewallBackend() {
+  if [ "$firewallBackend" = "auto" ]; then
+    if command -v nft >/dev/null 2>&1 && [ -f /usr/share/firewall4/main.uc ]; then
+      firewallBackend="fw4"
+      logLine 2 "Auto-detected fw4 (nftables) firewall backend"
+    elif command -v iptables >/dev/null 2>&1; then
+      firewallBackend="fw3"
+      logLine 2 "Auto-detected fw3 (iptables) firewall backend"
+    else
+      logLine 0 "Error: No supported firewall backend found"
+      exit 1
+    fi
+  fi
+}
+
+# nftables (fw4) functions
+nft_chainExists() {
+  nft list chain inet fw4 "$1" >/dev/null 2>&1
+}
+
+nft_ruleExists() {
+  local chain="$1" ip="$2" target="$3"
+  nft list chain inet fw4 "$chain" 2>/dev/null | grep -q "ip saddr $ip $target"
+}
+
+nft_createChain() {
+  if ! nft_chainExists "$firewallChain"; then
+    logLine 1 "Creating nftables chain $firewallChain"
+    # 创建一个普通的链，不是hook链
+    nft add chain inet fw4 "$firewallChain" 2>/dev/null
+  fi
+}
+
+nft_banIP() {
+  local ip="$1"
+  nft_createChain
+  if ! nft_ruleExists "$firewallChain" "$ip" "drop"; then
+    logLine 1 "Adding ban rule for IP $ip to nftables chain $firewallChain"
+    nft add rule inet fw4 "$firewallChain" ip saddr "$ip" drop
+  else
+    logLine 3 "nft_banIP() rule for $ip already present"
+  fi
+}
+
+nft_unbanIP() {
+  local ip="$1"
+  if nft_ruleExists "$firewallChain" "$ip" "drop"; then
+    logLine 1 "Removing ban rule for IP $ip from nftables"
+    # 获取规则handle并删除
+    local handle=$(nft -a list chain inet fw4 "$firewallChain" 2>/dev/null | \
+      grep "ip saddr $ip drop" | \
+      sed -n 's/.*# handle \([0-9]*\)$/\1/p' | head -1)
+    if [ -n "$handle" ]; then
+      nft delete rule inet fw4 "$firewallChain" handle "$handle" 2>/dev/null
+      logLine 2 "Deleted nftables rule handle $handle for IP $ip"
+    else
+      logLine 1 "Warning: Could not find rule handle for IP $ip, rule may still exist"
+    fi
+  else
+    logLine 3 "nft_unbanIP() rule for $ip not present"
+  fi
+}
+
+nft_wipeFirewall() {
+  if nft_chainExists "$firewallChain"; then
+    logLine 1 "Flushing and removing nftables chain $firewallChain"
+    nft flush chain inet fw4 "$firewallChain" 2>/dev/null
+    nft delete chain inet fw4 "$firewallChain" 2>/dev/null
+  fi
+}
+
+# iptables (fw3) functions - original implementation
+ipt_banIP() {
+  local ip="$1" x chain position
+  if ! iptables -nL "$firewallChain" >/dev/null 2>/dev/null; then
+    logLine 1 "Creating iptables chain $firewallChain"
+    iptables -N "$firewallChain"
+  fi
+  for x in $firewallHookChains; do
+    chain="${x%:*}"; position="${x#*:}"
+    if [ "$position" -ge 0 ] && ! iptables -C "$chain" -j "$firewallChain" 2>/dev/null; then
+      logLine 1 "Inserting hook into iptables chain $chain"
+      if [ "$position" = 0 ]; then
+        iptables -A "$chain" -j "$firewallChain"
+      else
+        iptables -I "$chain" "$position" -j "$firewallChain"
+      fi
+    fi
+  done
+  if ! iptables -C "$firewallChain" -s "$ip" -j "$firewallTarget" 2>/dev/null; then
+    logLine 1 "Inserting ban rule for IP $ip into iptables chain $firewallChain"
+    iptables -A "$firewallChain" -s "$ip" -j "$firewallTarget"
+  else
+    logLine 3 "ipt_banIP() rule for $ip already present"
+  fi
+}
+
+ipt_unbanIP() {
+  local ip="$1"
+  if iptables -C "$firewallChain" -s "$ip" -j "$firewallTarget" 2>/dev/null; then
+    logLine 1 "Removing ban rule for IP $ip from iptables"
+    iptables -D "$firewallChain" -s "$ip" -j "$firewallTarget"
+  else
+    logLine 3 "ipt_unbanIP() rule for $ip not present"
+  fi
+}
+
+ipt_wipeFirewall() {
+  local x chain position
+  for x in $firewallHookChains; do
+    chain="${x%:*}"; position="${x#*:}"
+    if [ "$position" -ge 0 ]; then
+      if iptables -C "$chain" -j "$firewallChain" 2>/dev/null; then
+        logLine 1 "Removing hook from iptables chain $chain"
+        iptables -D "$chain" -j "$firewallChain"
+      fi
+    fi
+  done
+  if iptables -nL "$firewallChain" >/dev/null 2>/dev/null; then
+    logLine 1 "Flushing and removing iptables chain $firewallChain"
+    iptables -F "$firewallChain" 2>/dev/null
+    iptables -X "$firewallChain" 2>/dev/null
+  fi
+}
+
 # Begin functions
 #
 # Clear bddb entries from environment
-bddbClear () { 
+bddbClear () {
   local bddbVar
   for bddbVar in `set | egrep '^bddb_[0-9_]*=' | cut -f1 -d= | xargs echo -n` ; do eval unset $bddbVar ; done
   bddbStateChange=1
@@ -88,8 +217,8 @@ bddbClear () {
 bddbCount () { set | egrep '^bddb_[0-9_]*=' | wc -l ; }
 
 # Loads existing bddb file into environment
-# Arg: $1 = file, $2 = type (bddb/bddbz), $3 = 
-bddbLoad () { 
+# Arg: $1 = file, $2 = type (bddb/bddbz), $3 =
+bddbLoad () {
   local loadFile="$1.$2" fileType="$2"
   if [ "$fileType" = bddb -a -f "$loadFile" ] ; then
     . "$loadFile"
@@ -103,14 +232,14 @@ bddbLoad () {
 }
 
 # Saves environment bddb entries to file, Arg: $1 = file to save in
-bddbSave () { 
+bddbSave () {
   local saveFile="$1.$2" fileType="$2"
   if [ "$fileType" = bddb ] ; then
     set | egrep '^bddb_[0-9_]*=' | sed s/\'//g > "$saveFile"
   elif [ "$fileType" = bddbz ] ; then
     set | egrep '^bddb_[0-9_]*=' | sed s/\'//g | gzip -c > "$saveFile"
   fi
-  bddbStateChange=0 
+  bddbStateChange=0
 }
 
 # Set bddb record status=1, update ban time flag with newest
@@ -136,7 +265,7 @@ bddbGetTimes () {
 bddbAddRecord () {
   local ip="`echo "$1" | tr . _`" ; shift
   local newEpochList="$@" status="`eval echo \\\$bddb_$ip | cut -f1 -d,`"
-  local oldEpochList="`eval echo \\\$bddb_$ip | cut -f2- -d,  | tr , \ `" 
+  local oldEpochList="`eval echo \\\$bddb_$ip | cut -f2- -d,  | tr , \ `"
   local epochList=`echo $oldEpochList $newEpochList | xargs -n 1 echo | sort -un | xargs echo -n | tr \  ,`
   [ -z "$status" ] && status=0
   eval "bddb_$ip"\=\"$status,$epochList\"
@@ -151,7 +280,7 @@ bddbRemoveRecord () {
 }
 
 # Returns all IPs (not CIDR) present in records
-bddbGetAllIPs () { 
+bddbGetAllIPs () {
   local ipRaw record
   set | egrep '^bddb_[0-9_]*=' | tr \' \  | while read record ; do
     ipRaw=`echo $record | cut -f1 -d= | sed 's/^bddb_//'`
@@ -196,62 +325,39 @@ getLogTime () {
 }
 
 # extra validation, fails safe. Args: $1=log line
-getLogIP () { 
+getLogIP () {
   local logLine="$1"
   local ebaPID=`echo "$logLine" | sed -n 's/^.*authpriv.info \(dropbear\[[0-9]*\]:\) Exit before auth:.*/\1/p'`
   [ -n "$ebaPID" ] && logLine=`$cmdLogreadEba | fgrep "${ebaPID} Child connection from "`
   echo "$logLine" | sed -n 's/^.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p'
 }
 
+# Unified firewall interface - automatically selects backend
 # Args: $1=IP
-unBanIP () {
-  if iptables -C $firewallChain -s $ip -j "$firewallTarget" 2>/dev/null ; then
-    logLine 1 "Removing ban rule for IP $ip from iptables"
-    iptables -D $firewallChain -s $ip -j "$firewallTarget"
+unBanIP() {
+  local ip="$1"
+  if [ "$firewallBackend" = "fw4" ]; then
+    nft_unbanIP "$ip"
   else
-    logLine 3 "unBanIP() Ban rule for $ip not present in iptables"
+    ipt_unbanIP "$ip"
   fi
 }
 
 # Args: $1=IP
-banIP () {
-  local ip="$1" x chain position
-  if ! iptables -nL $firewallChain >/dev/null 2>/dev/null ; then  
-    logLine 1 "Creating iptables chain $firewallChain"
-    iptables -N $firewallChain
-  fi
-  for x in $firewallHookChains ; do
-    chain="${x%:*}" ; position="${x#*:}"
-    if [ $position -ge 0 ] &&  ! iptables -C $chain -j $firewallChain 2>/dev/null ; then
-      logLine 1 "Inserting hook into iptables chain $chain"
-      if [ $position = 0 ] ; then
-        iptables -A $chain -j $firewallChain
-      else
-        iptables -I $chain $position -j $firewallChain
-    fi ; fi 
-  done
-  if ! iptables -C $firewallChain -s $ip -j "$firewallTarget" 2>/dev/null ; then
-    logLine 1 "Inserting ban rule for IP $ip into iptables chain $firewallChain"
-    iptables -A $firewallChain -s $ip -j "$firewallTarget"
+banIP() {
+  local ip="$1"
+  if [ "$firewallBackend" = "fw4" ]; then
+    nft_banIP "$ip"
   else
-    logLine 3 "banIP() rule for $ip already present in iptables chain"
+    ipt_banIP "$ip"
   fi
 }
 
-wipeFirewall () {
-  local x chain position
-  for x in $firewallHookChains ; do
-    chain="${x%:*}" ; position="${x#*:}"
-    if [ $position -ge 0 ] ; then
-      if iptables -C $chain -j $firewallChain 2>/dev/null ; then
-        logLine 1 "Removing hook from iptables chain $chain"
-        iptables -D $chain -j $firewallChain
-    fi ; fi
-  done
-  if iptables -nL $firewallChain >/dev/null 2>/dev/null ; then  
-    logLine 1 "Flushing and removing iptables chain $firewallChain"
-    iptables -F $firewallChain 2>/dev/null
-    iptables -X $firewallChain 2>/dev/null
+wipeFirewall() {
+  if [ "$firewallBackend" = "fw4" ]; then
+    nft_wipeFirewall
+  else
+    ipt_wipeFirewall
   fi
 }
 
@@ -269,7 +375,7 @@ bddbCheckStatusAll () {
         logLine 1 "Ban expired for $ip, removing from iptables"
         unBanIP $ip
         bddbRemoveRecord $ip
-      else 
+      else
         logLine 3 "bddbCheckStatusAll($ip) not expired yet"
         banIP $ip
       fi
@@ -291,7 +397,7 @@ bddbEvaluateRecord () {
   local times=`bddbGetRecord $1 | cut -d, -f2- | tr , \ `
   local timeCount=`echo $times | wc -w`
   local didBan=0
-  
+
   # 1: not enough attempts => do nothing and exit
   # 2: attempts exceed threshold in time period => ban
   # 3: attempts exceed threshold but time period is too long => trim oldest time, recalculate
@@ -308,14 +414,14 @@ bddbEvaluateRecord () {
     fi
     times=`echo $times | cut -d\  -f2-`
     timeCount=`echo $times | wc -w`
-  done  
+  done
   [ $didBan = 0 ] && logLine 2 "bddbEvaluateRecord($ip) does not exceed threshhold, skipping"
 }
 
 # Reads filtered log line and evaluates for action  Args: $1=log line
 processLogLine () {
-  local time=`getLogTime "$1"` 
-  local ip=`getLogIP "$1"` 
+  local time=`getLogTime "$1"`
+  local ip=`getLogIP "$1"`
   local status="`bddbGetStatus $ip`"
 
   if [ "$status" = -1 ] ; then
@@ -331,7 +437,7 @@ processLogLine () {
   elif [ -n "$ip" -a -n "$time" ] ; then
     bddbAddRecord $ip $time
     logLine 2 "processLogLine($ip,$time) Added record, comparing"
-    bddbEvaluateRecord $ip 
+    bddbEvaluateRecord $ip
   else
     logLine 1 "processLogLine($ip,$time) malformed line ($1)"
   fi
@@ -346,7 +452,7 @@ saveState () {
     logLine 3 "saveState() saving to temp state file"
     bddbSave "$fileStateTempPrefix" "$fileStateType"
     logLine 3 "saveState() now=`date +%s` lPSW=$lastPersistentStateWrite pSWP=$persistentStateWritePeriod fP=$forcePersistent"
-  fi    
+  fi
   if [ $persistentStateWritePeriod -gt 1 ] || [ $persistentStateWritePeriod -eq 0 -a $forcePersistent -eq 1 ] ; then
     if [ $((`date +%s` - lastPersistentStateWrite)) -ge $persistentStateWritePeriod ] || [ $forcePersistent -eq 1 ] ; then
       if [ ! -f "$fileStatePersist" ] || ! cmp -s "$fileStateTemp" "$fileStatePersist" ; then
@@ -397,7 +503,7 @@ printUsage () {
 #
 unset logMode
 while getopts a:b:c:C:f:hj:l:m:p:P:s:t: arg ; do
-  case "$arg" in 
+  case "$arg" in
     a) attemptCount="$OPTARG" ;;
     b) banLength="$OPTARG" ;;
     c) firewallChain="$OPTARG" ;;
@@ -426,6 +532,9 @@ banLength=`expandBindTime $banLength`
 followModeCheckInterval=`expandBindTime $followModeCheckInterval`
 exitStatus=0
 
+# Detect and initialize firewall backend
+detectFirewallBackend
+
 # Here we convert the logRegex list into a sed -f file
 fileRegex="/tmp/beardropper.$$.regex"
 uciLoad logRegex 's/[`$"'\\\'']//g' '/has invalid shell, rejected$/d' \
@@ -437,7 +546,7 @@ bddbCheckStatusAll
 
 # main event loops
 
-if [ "$logMode" = follow ] ; then 
+if [ "$logMode" = follow ] ; then
   logLine 1 "Running in follow mode"
   readsSinceSave=0 lastCheckAll=0 worstCaseReads=1 tmpFile="/tmp/beardropper.$$.1"
 # Verify if these do any good - try saving to a temp.  Scope may make saveState useless.
@@ -466,20 +575,20 @@ if [ "$logMode" = follow ] ; then
       fi
     fi
   done
-elif [ "$logMode" = entire ] ; then 
+elif [ "$logMode" = entire ] ; then
   logLine 1 "Running in entire mode"
-  $cmdLogread | sed -nEf "$fileRegex" | while read line ; do 
-    processLogLine "$line" 
+  $cmdLogread | sed -nEf "$fileRegex" | while read line ; do
+    processLogLine "$line"
     saveState
   done
   loadState
   bddbCheckStatusAll
   saveState -f
-elif [ "$logMode" = today ] ; then 
+elif [ "$logMode" = today ] ; then
   logLine 1 "Running in today mode"
   # merge the egrep into sed with -e /^$formatTodayLogDateRegex/!d
-  $cmdLogread | egrep "`date +\'$formatTodayLogDateRegex\'`" | sed -nEf "$fileRegex" | while read line ; do 
-      processLogLine "$line" 
+  $cmdLogread | egrep "`date +\'$formatTodayLogDateRegex\'`" | sed -nEf "$fileRegex" | while read line ; do
+      processLogLine "$line"
       saveState
     done
   loadState
@@ -497,7 +606,7 @@ elif isValidBindTime "$logMode" ; then
   loadState
   bddbCheckStatusAll
   saveState -f
-elif [ "$logMode" = wipe ] ; then 
+elif [ "$logMode" = wipe ] ; then
   logLine 2 "Wiping state files, unhooking and removing iptables chains"
   wipeFirewall
   if [ -f "$fileStateTemp" ] ; then
