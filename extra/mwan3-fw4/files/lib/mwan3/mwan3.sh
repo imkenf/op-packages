@@ -33,19 +33,34 @@ mwan3_nft_setup()
 	local family="$1"  # ip or ip6
 	local table_name="mwan3"
 
+	# Validate input parameter
+	if [ -z "$family" ]; then
+		LOG error "mwan3_nft_setup: family parameter is empty"
+		return 1
+	fi
+
 	# Create table if not exists
-	$NFT list table $family $table_name > /dev/null 2>&1 || {
-		$NFT add table $family $table_name
-	}
+	if ! $NFT list table $family $table_name > /dev/null 2>&1; then
+		$NFT add table $family $table_name 2>/dev/null || {
+			LOG error "Failed to create table $family $table_name"
+			return 1
+		}
+	fi
 
 	# Create base chains if not exist
-	$NFT list chain $family $table_name mangle_prerouting > /dev/null 2>&1 || {
-		$NFT add chain $family $table_name mangle_prerouting { type filter hook prerouting priority mangle \; }
-	}
+	if ! $NFT list chain $family $table_name mangle_prerouting > /dev/null 2>&1; then
+		$NFT add chain $family $table_name mangle_prerouting { type filter hook prerouting priority mangle \; } 2>/dev/null || {
+			LOG error "Failed to create prerouting chain for $family $table_name"
+			return 1
+		}
+	fi
 
-	$NFT list chain $family $table_name mangle_output > /dev/null 2>&1 || {
-		$NFT add chain $family $table_name mangle_output { type filter hook output priority mangle \; }
-	}
+	if ! $NFT list chain $family $table_name mangle_output > /dev/null 2>&1; then
+		$NFT add chain $family $table_name mangle_output { type filter hook output priority mangle \; } 2>/dev/null || {
+			LOG error "Failed to create output chain for $family $table_name"
+			return 1
+		}
+	fi
 }
 
 # Convert iptables mark operations to nftables
@@ -309,29 +324,49 @@ mwan3_set_general_nftables()
 
 		update=""
 
-		# Setup basic nftables structure
-		mwan3_nft_setup $nft_family
-
-		# Create chains if they don't exist
-		$NFT list chain $nft_family mwan3 mwan3_ifaces_in > /dev/null 2>&1 || {
-			mwan3_push_update "add chain $nft_family mwan3 mwan3_ifaces_in"
+		# Setup basic nftables structure (immediate execution)
+		mwan3_nft_setup $nft_family || {
+			LOG error "Failed to setup nftables for $nft_family"
+			continue
 		}
 
-		# Create chain-specific chains
-		for chain in custom connected dynamic; do
-			$NFT list chain $nft_family mwan3 mwan3_${chain}_${family} > /dev/null 2>&1 || {
-				mwan3_push_update "add chain $nft_family mwan3 mwan3_${chain}_${family}"
-				mwan3_push_update "add rule $nft_family mwan3 mwan3_${chain}_${family} $nft_family daddr @${chain}_${family} mark set $MMX_DEFAULT"
+		# Create additional chains (immediate execution to ensure they exist)
+		if ! $NFT list chain $nft_family mwan3 mwan3_ifaces_in > /dev/null 2>&1; then
+			$NFT add chain $nft_family mwan3 mwan3_ifaces_in 2>/dev/null || {
+				LOG error "Failed to create mwan3_ifaces_in chain for $nft_family"
+				continue
 			}
+		fi
+
+		# Create chain-specific chains (immediate execution)
+		for chain in custom connected dynamic; do
+			if ! $NFT list chain $nft_family mwan3 mwan3_${chain}_${family} > /dev/null 2>&1; then
+				$NFT add chain $nft_family mwan3 mwan3_${chain}_${family} 2>/dev/null || {
+					LOG error "Failed to create mwan3_${chain}_${family} chain for $nft_family"
+					continue
+				}
+				# Add basic rule for this chain (immediate execution)
+				$NFT add rule $nft_family mwan3 mwan3_${chain}_${family} $nft_family daddr @${chain}_${family} mark set $MMX_DEFAULT 2>/dev/null || {
+					LOG warn "Failed to add rule to mwan3_${chain}_${family} chain (set may not exist yet)"
+				}
+			fi
 		done
 
-		$NFT list chain $nft_family mwan3 mwan3_rules > /dev/null 2>&1 || {
-			mwan3_push_update "add chain $nft_family mwan3 mwan3_rules"
-		}
+		if ! $NFT list chain $nft_family mwan3 mwan3_rules > /dev/null 2>&1; then
+			$NFT add chain $nft_family mwan3 mwan3_rules 2>/dev/null || {
+				LOG error "Failed to create mwan3_rules chain for $nft_family"
+				continue
+			}
+		fi
 
-		$NFT list chain $nft_family mwan3 mwan3_hook > /dev/null 2>&1 || {
-			mwan3_push_update "add chain $nft_family mwan3 mwan3_hook"
+		# Create mwan3_hook chain and populate it (batch mode for complex rules)
+		if ! $NFT list chain $nft_family mwan3 mwan3_hook > /dev/null 2>&1; then
+			$NFT add chain $nft_family mwan3 mwan3_hook 2>/dev/null || {
+				LOG error "Failed to create mwan3_hook chain for $nft_family"
+				continue
+			}
 
+			# Build complex hook rules in batch mode
 			# IPv6 Router Advertisement exemptions
 			if [ "$family" = "ipv6" ]; then
 				mwan3_push_update "add rule $nft_family mwan3 mwan3_hook icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, nd-redirect } return"
@@ -353,17 +388,18 @@ mwan3_set_general_nftables()
 			for chain in custom connected dynamic; do
 				mwan3_push_update "add rule $nft_family mwan3 mwan3_hook mark and $MMX_MASK != $MMX_DEFAULT jump mwan3_${chain}_${family}"
 			done
-		}
+		fi
 
-		# Hook into prerouting and output
-		$NFT list chain $nft_family mwan3 mangle_prerouting | grep -q "jump mwan3_hook" || {
+		# Hook into prerouting and output (check first, then add to batch if needed)
+		if ! $NFT list chain $nft_family mwan3 mangle_prerouting 2>/dev/null | grep -q "jump mwan3_hook"; then
 			mwan3_push_update "add rule $nft_family mwan3 mangle_prerouting jump mwan3_hook"
-		}
+		fi
 
-		$NFT list chain $nft_family mwan3 mangle_output | grep -q "jump mwan3_hook" || {
+		if ! $NFT list chain $nft_family mwan3 mangle_output 2>/dev/null | grep -q "jump mwan3_hook"; then
 			mwan3_push_update "add rule $nft_family mwan3 mangle_output jump mwan3_hook"
-		}
+		fi
 
+		# Execute batch commands if any
 		echo "$update" > "${MWAN3_STATUS_IPTABLES_LOG_DIR}/nft-set_general_nftables-${family}.dump"
 		if [ -n "$update" ]; then
 			error=$(echo "$update" | $NFT -f - 2>&1) || LOG error "set_general_nftables (${family}): $error"

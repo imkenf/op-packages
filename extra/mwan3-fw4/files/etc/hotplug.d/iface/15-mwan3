@@ -28,7 +28,7 @@ mwan3_init
 	exit 0
 }
 
-$IPT4 -S mwan3_hook &>/dev/null || {
+$NFT list chain ip mwan3 mwan3_hook &>/dev/null || {
 	LOG warn "hotplug called on $INTERFACE before mwan3 has been set up"
 	exit 0
 }

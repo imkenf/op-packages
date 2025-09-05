@@ -377,6 +377,46 @@ stop() {
 	ln -s "libipsec.so.0.0.0" "/usr/lib/ipsec/libipsec.so.0" >/dev/null 2>&1
 }
 
+# 添加重启功能
+restart() {
+	stop
+	sleep 2
+	start
+}
+
+# 添加状态检查功能
+status() {
+	local vt_enabled=$(uci -q get ${CONFIG}.@service[0].enabled)
+
+	if [ "$vt_enabled" != "1" ]; then
+		echo "服务已禁用"
+		return 1
+	fi
+
+	# 检查IPSec状态
+	if pgrep charon >/dev/null 2>&1; then
+		echo "IPSec 服务运行中"
+		local ipsec_status="运行中"
+	else
+		echo "IPSec 服务未运行"
+		local ipsec_status="未运行"
+	fi
+
+	# 检查L2TP状态
+	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
+	if [ "$l2tp_enabled" = "1" ]; then
+		if pgrep xl2tpd >/dev/null 2>&1; then
+			echo "L2TP 服务运行中"
+		else
+			echo "L2TP 服务未运行"
+		fi
+	else
+		echo "L2TP 服务已禁用"
+	fi
+
+	return 0
+}
+
 gen_iface_and_firewall() {
 	# 获取客户端IP配置
 	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)

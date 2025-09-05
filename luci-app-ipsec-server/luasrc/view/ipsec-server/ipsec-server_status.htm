@@ -1,19 +1,34 @@
 <% include("cbi/map") %>
 <script type="text/javascript">//<![CDATA[
-	XHR.poll(2, '<%=luci.dispatcher.build_url("admin", "vpn", "ipsec-server", "status")%>', null,
+	XHR.poll(3, '<%=luci.dispatcher.build_url("admin", "vpn", "ipsec-server", "status")%>', null,
 		function(x, result)
 		{
 			var ipsec_status = document.getElementsByClassName('ipsec-server_status')[0];
 			if (ipsec_status) {
 				ipsec_status.setAttribute("style","font-weight:bold;");
-				ipsec_status.setAttribute("color",result.ipsec_status ? "green":"red");
-				ipsec_status.innerHTML = result.ipsec_status?'<%=translate("RUNNING")%>':'<%=translate("NOT RUNNING")%>';
+				if (result.service_enabled) {
+					ipsec_status.setAttribute("color", result.ipsec_status ? "green" : "orange");
+					ipsec_status.innerHTML = result.ipsec_status ?
+						'<%=translate("RUNNING")%>' :
+						'<%=translate("ENABLED BUT NOT RUNNING")%>';
+				} else {
+					ipsec_status.setAttribute("color", "gray");
+					ipsec_status.innerHTML = '<%=translate("DISABLED")%>';
+				}
 			}
+
 			var l2tp_status = document.getElementsByClassName('l2tp_status')[0];
 			if (l2tp_status) {
 				l2tp_status.setAttribute("style","font-weight:bold;");
-				l2tp_status.setAttribute("color",result.l2tp_status ? "green":"red");
-				l2tp_status.innerHTML = result.l2tp_status?'<%=translate("RUNNING")%>':'<%=translate("NOT RUNNING")%>';
+				if (result.service_enabled && result.l2tp_enabled) {
+					l2tp_status.setAttribute("color", result.l2tp_status ? "green" : "orange");
+					l2tp_status.innerHTML = result.l2tp_status ?
+						'<%=translate("RUNNING")%>' :
+						'<%=translate("ENABLED BUT NOT RUNNING")%>';
+				} else {
+					l2tp_status.setAttribute("color", "gray");
+					l2tp_status.innerHTML = '<%=translate("DISABLED")%>';
+				}
 			}
 		}
 	)
