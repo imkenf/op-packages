@@ -12,9 +12,7 @@ L2TP_CONFIG_FILE=${L2TP_PATH}/xl2tpd.conf
 L2TP_OPTIONS_FILE=${L2TP_PATH}/options.xl2tpd
 L2TP_LOG_FILE=${L2TP_PATH}/xl2tpd.log
 
-vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
-l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
-l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
+# 在函数中获取这些变量，避免在脚本加载时就读取可能不存在的配置
 
 fw_flag="ipsec-vpn-server"
 
@@ -37,6 +35,17 @@ detect_firewall() {
 fw_rule() {
 	local action="$1"
 	local fw_type=$(detect_firewall)
+
+	# 获取配置变量
+	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
+	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
+	local l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
+
+	# 检查必要变量
+	if [ -z "$vt_clientip" ]; then
+		echo "错误：未配置客户端IP范围 (clientip)"
+		return 1
+	fi
 
 	if [ "$action" = "add" ]; then
 		# 删除旧规则（如果存在）
@@ -96,6 +105,13 @@ fw_rule() {
 
 		# L2TP 相关规则
 		if [ "${l2tp_enabled}" = 1 ]; then
+			if [ -z "$l2tp_localip" ]; then
+				echo "警告：L2TP已启用但未配置本地IP，使用默认值 192.168.101.1"
+				l2tp_localip="192.168.101.1"
+			fi
+
+			local l2tp_network="${l2tp_localip%.*}.0/24"
+
 			uci -q delete firewall.l2tp_input_1701 2>/dev/null
 			uci -q delete firewall.l2tp_forward_client 2>/dev/null
 			uci -q delete firewall.l2tp_nat_client 2>/dev/null
@@ -111,13 +127,13 @@ fw_rule() {
 
 				set firewall.l2tp_forward_client=rule
 				set firewall.l2tp_forward_client.name='Forward L2TP Client'
-				set firewall.l2tp_forward_client.src_ip='${l2tp_localip%.*}.0/24'
+				set firewall.l2tp_forward_client.src_ip='${l2tp_network}'
 				set firewall.l2tp_forward_client.target='ACCEPT'
 				set firewall.l2tp_forward_client.enabled='1'
 
 				set firewall.l2tp_nat_client=nat
 				set firewall.l2tp_nat_client.name='L2TP Client NAT'
-				set firewall.l2tp_nat_client.src_ip='${l2tp_localip%.*}.0/24'
+				set firewall.l2tp_nat_client.src_ip='${l2tp_network}'
 				set firewall.l2tp_nat_client.dest='wan'
 				set firewall.l2tp_nat_client.target='MASQUERADE'
 				set firewall.l2tp_nat_client.enabled='1'
@@ -177,10 +193,19 @@ start() {
 	local vt_enabled=$(uci -q get ${CONFIG}.@service[0].enabled)
 	[ "$vt_enabled" = 0 ] && return 1
 
-	local vt_gateway="${vt_clientip%.*}.1"
+	# 获取配置变量
+	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
 	local vt_secret=$(uci -q get ${CONFIG}.@service[0].secret)
-
 	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
+	local l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
+
+	# 检查必要配置
+	if [ -z "$vt_clientip" ]; then
+		echo "错误：未配置客户端IP范围，请检查配置"
+		return 1
+	fi
+
+	local vt_gateway="${vt_clientip%.*}.1"
 	[ "${l2tp_enabled}" = 1 ] && {
 		touch ${CHAP_SECRETS}
 		local vt_remoteip=$(uci -q get ${CONFIG}.@service[0].l2tp_remoteip)
@@ -353,13 +378,24 @@ stop() {
 }
 
 gen_iface_and_firewall() {
+	# 获取客户端IP配置
+	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
+
+	# 如果没有配置客户端IP，使用默认值
+	if [ -z "$vt_clientip" ]; then
+		echo "警告：未配置客户端IP，使用默认值 192.168.100.10/24"
+		vt_clientip="192.168.100.10/24"
+	fi
+
+	local gateway_ip="${vt_clientip%.*}.1"
+
 	uci -q batch <<-EOF >/dev/null
 		delete network.ipsec_server
 		set network.ipsec_server=interface
 		set network.ipsec_server.ifname="ipsec0"
 		set network.ipsec_server.device="ipsec0"
 		set network.ipsec_server.proto="static"
-		set network.ipsec_server.ipaddr="${vt_clientip%.*}.1"
+		set network.ipsec_server.ipaddr="${gateway_ip}"
 		set network.ipsec_server.netmask="255.255.255.0"
 		commit network
 
@@ -374,6 +410,7 @@ gen_iface_and_firewall() {
 	EOF
 }
 
+# 检查并初始化网络接口和防火墙区域
 if [ -z "$(uci -q get network.ipsec_server)" ] || [ -z "$(uci -q get firewall.ipsecserver)" ]; then
 	gen_iface_and_firewall
 fi

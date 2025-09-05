@@ -19,11 +19,11 @@ MMX_UNREACHABLE=""
 MM_UNREACHABLE=""
 MAX_SLEEP=$(((1<<31)-1))
 
+NFT="nft"
+
 # Check if IPv6 support is available in nftables
 $NFT list tables ip6 > /dev/null 2>&1
 NO_IPV6=$?
-
-NFT="nft"
 # Using nftables instead of iptables
 # Maintain compatibility variables for gradual migration
 IPT4="nft"
