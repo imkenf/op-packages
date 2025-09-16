@@ -12,10 +12,33 @@ o.cfgvalue = function(t, n)
 	return '<font class="ipsec-server_status"></font>'
 end
 
-enabled = s:option(Flag, "enabled", translate("Enable"))
-enabled.description = translate("Use a client that supports IPSec Xauth PSK (iOS or Android) to connect to this server.")
-enabled.default = 0
-enabled.rmempty = false
+-- runtime start/stop buttons instead of checkbox
+local running = (sys.call("/usr/bin/pgrep ipsec >/dev/null") == 0)
+
+local btn_start = s:option(Button, "_start")
+btn_start.title = translate("Enable")
+btn_start.inputtitle = translate("启动服务")
+btn_start.inputstyle = "apply"
+btn_start.cfgvalue = function(self, section)
+	return running and nil or true
+end
+btn_start.write = function(self, section)
+	sys.call("uci set luci-app-ipsec-server.@service[0].enabled='1'")
+	sys.call("uci commit luci-app-ipsec-server")
+	sys.call("/etc/init.d/luci-app-ipsec-server start >/dev/null 2>&1 &")
+end
+
+local btn_stop = s:option(Button, "_stop")
+btn_stop.inputtitle = translate("停止服务")
+btn_stop.inputstyle = "reset"
+btn_stop.cfgvalue = function(self, section)
+	return running and true or nil
+end
+btn_stop.write = function(self, section)
+	sys.call("uci set luci-app-ipsec-server.@service[0].enabled='0'")
+	sys.call("uci commit luci-app-ipsec-server")
+	sys.call("/etc/init.d/luci-app-ipsec-server stop >/dev/null 2>&1 &")
+end
 
 clientip = s:option(Value, "clientip", translate("VPN Client IP"))
 clientip.description = translate("VPN Client reserved started IP addresses with the same subnet mask, such as: 192.168.100.10/24")
@@ -51,7 +74,7 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 	o.default = "192.168.101.10-20"
 	o.placeholder = o.default
 
-	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then 
+	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then
 		o = s:option(DummyValue, "_o", " ")
 		o.rawhtml = true
 		o.cfgvalue = function(t, n)

@@ -15,7 +15,9 @@
 	border-radius: 12px;
 	padding: 1.5rem;
 	width: 16rem;
-	min-height: 7rem;
+	/* 统一卡片高度，避免内容有无造成高度不一致 */
+	height: 10rem;
+	box-sizing: border-box;
 	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 	transition: all 0.2s ease-in-out;
 	position: relative;
@@ -207,7 +209,4 @@
 	background: linear-gradient(90deg, #ef4444, #dc2626);
 }
 
-/* 隐藏原有的文本格式 */
-#mwan3-service-status > .alert-message > div {
-	display: none;
-}
+/* 取消隐藏，确保卡片文字与内容可见 */
