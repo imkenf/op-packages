@@ -10,7 +10,8 @@
 #mwan3-service-status > .alert-message {
 	display: flex;
 	flex-direction: column;
-	background: #ffffff;
+	/* 覆盖主题的提示背景色，保持统一的白色卡片 */
+	background: #ffffff !important;
 	border: 1px solid #e5e7eb;
 	border-radius: 12px;
 	padding: 1.5rem;
@@ -18,6 +19,8 @@
 	/* 统一卡片高度，避免内容有无造成高度不一致 */
 	height: 10rem;
 	box-sizing: border-box;
+	color: #111827;
+	border-left: 6px solid #e5e7eb;
 	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 	transition: all 0.2s ease-in-out;
 	position: relative;
@@ -155,6 +158,9 @@
 	background-size: 16px;
 }
 
+/* 左侧状态色条 */
+#mwan3-service-status > .alert-message.success { border-left-color: #10b981; }
+
 #mwan3-service-status > .alert-message.success .mwan3-status-text {
 	color: #059669;
 }
@@ -176,6 +182,8 @@
 	background-size: 16px;
 }
 
+#mwan3-service-status > .alert-message.warning { border-left-color: #f59e0b; }
+
 #mwan3-service-status > .alert-message.warning .mwan3-status-text {
 	color: #d97706;
 }
@@ -196,6 +204,8 @@
 	background-position: center;
 	background-size: 16px;
 }
+
+#mwan3-service-status > .alert-message.danger { border-left-color: #ef4444; }
 
 #mwan3-service-status > .alert-message.danger .mwan3-status-text {
 	color: #dc2626;

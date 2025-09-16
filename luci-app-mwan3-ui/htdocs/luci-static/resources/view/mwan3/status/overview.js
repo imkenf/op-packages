@@ -86,7 +86,8 @@ function renderMwan3Status(status) {
 
 		if (time) {
 			statusview += '<div class="mwan3-time-info">';
-			statusview += '<div class="mwan3-time-label">%h %h</div>'.format(timeIcon, tname);
+			// 插入 SVG 图标不转义
+			statusview += '<div class="mwan3-time-label">%s %h</div>'.format(timeIcon, tname);
 			statusview += '<div class="mwan3-time-progress">';
 			statusview += '<div class="mwan3-time-progress-bar" style="width: %d%%"></div>'.format(progressWidth);
 			statusview += '</div>';

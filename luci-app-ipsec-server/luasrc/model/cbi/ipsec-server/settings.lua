@@ -12,33 +12,28 @@ o.cfgvalue = function(t, n)
 	return '<font class="ipsec-server_status"></font>'
 end
 
--- runtime start/stop buttons instead of checkbox
-local running = (sys.call("/usr/bin/pgrep ipsec >/dev/null") == 0)
-
-local btn_start = s:option(Button, "_start")
-btn_start.title = translate("Enable")
-btn_start.inputtitle = translate("启动服务")
-btn_start.inputstyle = "apply"
-btn_start.cfgvalue = function(self, section)
-	return running and nil or true
-end
-btn_start.write = function(self, section)
-	sys.call("uci set luci-app-ipsec-server.@service[0].enabled='1'")
-	sys.call("uci commit luci-app-ipsec-server")
-	sys.call("/etc/init.d/luci-app-ipsec-server start >/dev/null 2>&1 &")
-end
-
-local btn_stop = s:option(Button, "_stop")
-btn_stop.inputtitle = translate("停止服务")
-btn_stop.inputstyle = "reset"
-btn_stop.cfgvalue = function(self, section)
-	return running and true or nil
-end
-btn_stop.write = function(self, section)
-	sys.call("uci set luci-app-ipsec-server.@service[0].enabled='0'")
-	sys.call("uci commit luci-app-ipsec-server")
-	sys.call("/etc/init.d/luci-app-ipsec-server stop >/dev/null 2>&1 &")
-end
+ -- runtime toggle button instead of checkbox
+ local btn_toggle = s:option(Button, "_toggle")
+ btn_toggle.title = translate("Enable")
+ btn_toggle.cfgvalue = function(self, section)
+ 	local running = (sys.call("/usr/bin/pgrep ipsec >/dev/null") == 0)
+ 	self.inputtitle = running and translate("停止服务") or translate("启动服务")
+ 	self.inputstyle = running and "reset" or "apply"
+ 	return true
+ end
+ btn_toggle.write = function(self, section)
+ 	if sys.call("/usr/bin/pgrep ipsec >/dev/null") == 0 then
+ 		-- stop
+ 		sys.call("uci set luci-app-ipsec-server.@service[0].enabled='0'")
+ 		sys.call("uci commit luci-app-ipsec-server")
+ 		sys.call("/etc/init.d/luci-app-ipsec-server stop >/dev/null 2>&1 &")
+ 	else
+ 		-- start
+ 		sys.call("uci set luci-app-ipsec-server.@service[0].enabled='1'")
+ 		sys.call("uci commit luci-app-ipsec-server")
+ 		sys.call("/etc/init.d/luci-app-ipsec-server start >/dev/null 2>&1 &")
+ 	end
+ end
 
 clientip = s:option(Value, "clientip", translate("VPN Client IP"))
 clientip.description = translate("VPN Client reserved started IP addresses with the same subnet mask, such as: 192.168.100.10/24")
