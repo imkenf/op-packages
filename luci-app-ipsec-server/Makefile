@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ipsec-server
 PKG_VERSION:=20211223
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_MAINTAINER:=Lienol <lawlienol@gmail.com>
 
@@ -16,8 +16,7 @@ LUCI_DEPENDS:=+kmod-tun +luci-lib-jsonc +xl2tpd +strongswan \
   +PACKAGE_strongswan:strongswan-mod-kernel-libipsec \
   +PACKAGE_strongswan:strongswan-mod-openssl \
   +PACKAGE_strongswan:strongswan-mod-xauth-generic \
-  +(PACKAGE_strongswan-mod-kdf||PACKAGE_strongswan-mod-openssl||PACKAGE_strongswan-mod-wolfssl):strongswan-minimal \
-  +firewall4
+  +(PACKAGE_strongswan-mod-kdf||PACKAGE_strongswan-mod-openssl||PACKAGE_strongswan-mod-wolfssl):strongswan-minimal
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/conffiles

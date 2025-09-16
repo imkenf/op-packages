@@ -3,19 +3,6 @@ local sys = require "luci.sys"
 m = Map("luci-app-ipsec-server", translate("IPSec VPN Server"))
 m.template = "ipsec-server/ipsec-server_status"
 
--- 添加配置提交后的服务重载
-function m.on_after_commit(map)
-	-- 检查服务是否启用
-	local enabled = map:get("@service[0]", "enabled")
-	if enabled == "1" then
-		-- 重启服务以应用新配置
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server restart >/dev/null 2>&1 &")
-	else
-		-- 停止服务
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server stop >/dev/null 2>&1 &")
-	end
-end
-
 s = m:section(TypedSection, "service")
 s.anonymous = true
 
@@ -29,22 +16,6 @@ enabled = s:option(Flag, "enabled", translate("Enable"))
 enabled.description = translate("Use a client that supports IPSec Xauth PSK (iOS or Android) to connect to this server.")
 enabled.default = 0
 enabled.rmempty = false
-
--- 添加服务启动/停止回调
-function enabled.write(self, section, value)
-	Flag.write(self, section, value)
-
-	-- 根据配置启用或禁用服务
-	if value == "1" then
-		-- 启用并启动服务
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server enable >/dev/null 2>&1")
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server restart >/dev/null 2>&1 &")
-	else
-		-- 停止并禁用服务
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server stop >/dev/null 2>&1 &")
-		luci.sys.call("/etc/init.d/luci-app-ipsec-server disable >/dev/null 2>&1")
-	end
-end
 
 clientip = s:option(Value, "clientip", translate("VPN Client IP"))
 clientip.description = translate("VPN Client reserved started IP addresses with the same subnet mask, such as: 192.168.100.10/24")
@@ -67,16 +38,6 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 	o.default = 0
 	o.rmempty = false
 
-	-- 为L2TP开关添加回调
-	function o.write(self, section, value)
-		Flag.write(self, section, value)
-		-- 如果主服务启用且L2TP设置改变，重启服务
-		local main_enabled = self.map:get(section, "enabled")
-		if main_enabled == "1" then
-			luci.sys.call("/etc/init.d/luci-app-ipsec-server restart >/dev/null 2>&1 &")
-		end
-	end
-
 	o = s:option(Value, "l2tp_localip", "L2TP " .. translate("Server IP"))
 	o.description = translate("VPN Server IP address, such as: 192.168.101.1")
 	o.datatype = "ip4addr"
@@ -90,7 +51,7 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 	o.default = "192.168.101.10-20"
 	o.placeholder = o.default
 
-	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then
+	if sys.call("ls -L /usr/lib/ipsec/libipsec* 2>/dev/null >/dev/null") == 0 then 
 		o = s:option(DummyValue, "_o", " ")
 		o.rawhtml = true
 		o.cfgvalue = function(t, n)

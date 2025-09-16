@@ -12,200 +12,70 @@ L2TP_CONFIG_FILE=${L2TP_PATH}/xl2tpd.conf
 L2TP_OPTIONS_FILE=${L2TP_PATH}/options.xl2tpd
 L2TP_LOG_FILE=${L2TP_PATH}/xl2tpd.log
 
-# 在函数中获取这些变量，避免在脚本加载时就读取可能不存在的配置
+vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
+l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
+l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
 
-fw_flag="ipsec-vpn-server"
+ipt_flag="IPSec VPN Server"
 
 get_enabled_anonymous_secs() {
 	uci -q show "${CONFIG}" | grep "${1}\[.*\.enabled='1'" | cut -d '.' -sf2
 }
 
-# 检测防火墙类型 (fw3/fw4)
-detect_firewall() {
-	if [ -x "/sbin/fw4" ] && [ -f "/usr/share/firewall4/main.uc" ]; then
-		echo "fw4"
-	elif [ -x "/usr/sbin/firewall3" ] || [ -f "/etc/config/firewall" ]; then
-		echo "fw3"
+ipt_rule() {
+	if [ "$1" = "add" ]; then
+		iptables -t nat -I postrouting_rule -s ${vt_clientip} -m comment --comment "${ipt_flag}" -j MASQUERADE 2>/dev/null
+		iptables -I forwarding_rule -s ${vt_clientip} -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+		iptables -I forwarding_rule -m policy --dir in --pol ipsec --proto esp -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+		iptables -I forwarding_rule -m policy --dir out --pol ipsec --proto esp -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+		iptables -I input_rule -p udp -m multiport --dports 500,4500 -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+		iptables -t mangle -I OUTPUT -p udp -m multiport --sports 500,4500 -m comment --comment "${ipt_flag}" -j RETURN 2>/dev/null
+		[ "${l2tp_enabled}" = 1 ] && {
+			iptables -t nat -I postrouting_rule -s ${l2tp_localip%.*}.0/24 -m comment --comment "${ipt_flag}" -j MASQUERADE 2>/dev/null
+			iptables -I forwarding_rule -s ${l2tp_localip%.*}.0/24 -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+			iptables -I input_rule -p udp --dport 1701 -m comment --comment "${ipt_flag}" -j ACCEPT 2>/dev/null
+			iptables -t mangle -I OUTPUT -p udp --sport 1701 -m comment --comment "${ipt_flag}" -j RETURN 2>/dev/null
+		}
 	else
-		echo "unknown"
+		ipt_del() {
+			for i in $(seq 1 $($1 -nL $2 | grep -c "${ipt_flag}")); do
+				local index=$($1 --line-number -nL $2 | grep "${ipt_flag}" | head -1 | awk '{print $1}')
+				$1 -w -D $2 $index 2>/dev/null
+			done
+		}
+		ipt_del "iptables" "forwarding_rule"
+		ipt_del "iptables" "input_rule"
+		ipt_del "iptables -t nat" "postrouting_rule"
+		ipt_del "iptables -t mangle" "OUTPUT"
 	fi
 }
 
-# 使用 UCI 管理防火墙规则 (支持 fw3 和 fw4)
-fw_rule() {
-	local action="$1"
-	local fw_type=$(detect_firewall)
-
-	# 获取配置变量
-	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
-	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
-	local l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
-
-	# 检查必要变量
-	if [ -z "$vt_clientip" ]; then
-		echo "错误：未配置客户端IP范围 (clientip)"
-		return 1
-	fi
-
-	if [ "$action" = "add" ]; then
-		# 删除旧规则（如果存在）
-		uci -q delete firewall.ipsec_input_500_4500 2>/dev/null
-		uci -q delete firewall.ipsec_forward_client 2>/dev/null
-		uci -q delete firewall.ipsec_forward_esp_in 2>/dev/null
-		uci -q delete firewall.ipsec_forward_esp_out 2>/dev/null
-		uci -q delete firewall.ipsec_nat_client 2>/dev/null
-
-		# IPSec 输入规则 (UDP 500, 4500)
-		uci -q batch <<-EOF >/dev/null
-			set firewall.ipsec_input_500_4500=rule
-			set firewall.ipsec_input_500_4500.name='Allow IPSec'
-			set firewall.ipsec_input_500_4500.src='wan'
-			set firewall.ipsec_input_500_4500.proto='udp'
-			set firewall.ipsec_input_500_4500.dest_port='500 4500'
-			set firewall.ipsec_input_500_4500.target='ACCEPT'
-			set firewall.ipsec_input_500_4500.enabled='1'
-		EOF
-
-		# IPSec 客户端转发规则
-		uci -q batch <<-EOF >/dev/null
-			set firewall.ipsec_forward_client=rule
-			set firewall.ipsec_forward_client.name='Forward IPSec Client'
-			set firewall.ipsec_forward_client.src='ipsecserver'
-			set firewall.ipsec_forward_client.target='ACCEPT'
-			set firewall.ipsec_forward_client.enabled='1'
-		EOF
-
-		# IPSec ESP 协议转发规则
-		if [ "$fw_type" = "fw4" ]; then
-			# fw4 支持更精确的协议匹配
-			uci -q batch <<-EOF >/dev/null
-				set firewall.ipsec_forward_esp_in=rule
-				set firewall.ipsec_forward_esp_in.name='Forward IPSec ESP In'
-				set firewall.ipsec_forward_esp_in.proto='esp'
-				set firewall.ipsec_forward_esp_in.target='ACCEPT'
-				set firewall.ipsec_forward_esp_in.enabled='1'
-
-				set firewall.ipsec_forward_esp_out=rule
-				set firewall.ipsec_forward_esp_out.name='Forward IPSec ESP Out'
-				set firewall.ipsec_forward_esp_out.proto='esp'
-				set firewall.ipsec_forward_esp_out.target='ACCEPT'
-				set firewall.ipsec_forward_esp_out.enabled='1'
-			EOF
-		fi
-
-		# NAT 伪装规则
-		uci -q batch <<-EOF >/dev/null
-			set firewall.ipsec_nat_client=nat
-			set firewall.ipsec_nat_client.name='IPSec Client NAT'
-			set firewall.ipsec_nat_client.src='ipsecserver'
-			set firewall.ipsec_nat_client.dest='wan'
-			set firewall.ipsec_nat_client.target='MASQUERADE'
-			set firewall.ipsec_nat_client.enabled='1'
-		EOF
-
-		# L2TP 相关规则
-		if [ "${l2tp_enabled}" = 1 ]; then
-			if [ -z "$l2tp_localip" ]; then
-				echo "警告：L2TP已启用但未配置本地IP，使用默认值 192.168.101.1"
-				l2tp_localip="192.168.101.1"
-			fi
-
-			local l2tp_network="${l2tp_localip%.*}.0/24"
-
-			uci -q delete firewall.l2tp_input_1701 2>/dev/null
-			uci -q delete firewall.l2tp_forward_client 2>/dev/null
-			uci -q delete firewall.l2tp_nat_client 2>/dev/null
-
-			uci -q batch <<-EOF >/dev/null
-				set firewall.l2tp_input_1701=rule
-				set firewall.l2tp_input_1701.name='Allow L2TP'
-				set firewall.l2tp_input_1701.src='wan'
-				set firewall.l2tp_input_1701.proto='udp'
-				set firewall.l2tp_input_1701.dest_port='1701'
-				set firewall.l2tp_input_1701.target='ACCEPT'
-				set firewall.l2tp_input_1701.enabled='1'
-
-				set firewall.l2tp_forward_client=rule
-				set firewall.l2tp_forward_client.name='Forward L2TP Client'
-				set firewall.l2tp_forward_client.src_ip='${l2tp_network}'
-				set firewall.l2tp_forward_client.target='ACCEPT'
-				set firewall.l2tp_forward_client.enabled='1'
-
-				set firewall.l2tp_nat_client=nat
-				set firewall.l2tp_nat_client.name='L2TP Client NAT'
-				set firewall.l2tp_nat_client.src_ip='${l2tp_network}'
-				set firewall.l2tp_nat_client.dest='wan'
-				set firewall.l2tp_nat_client.target='MASQUERADE'
-				set firewall.l2tp_nat_client.enabled='1'
-			EOF
-		fi
-
-		uci -q commit firewall
-
-		# 重新加载防火墙
-		if [ "$fw_type" = "fw4" ]; then
-			fw4 reload >/dev/null 2>&1
-		else
-			/etc/init.d/firewall reload >/dev/null 2>&1
-		fi
-
-	else
-		# 删除规则
-		uci -q batch <<-EOF >/dev/null
-			delete firewall.ipsec_input_500_4500
-			delete firewall.ipsec_forward_client
-			delete firewall.ipsec_forward_esp_in
-			delete firewall.ipsec_forward_esp_out
-			delete firewall.ipsec_nat_client
-			delete firewall.l2tp_input_1701
-			delete firewall.l2tp_forward_client
-			delete firewall.l2tp_nat_client
-			commit firewall
-		EOF
-
-		# 重新加载防火墙
-		local fw_type=$(detect_firewall)
-		if [ "$fw_type" = "fw4" ]; then
-			fw4 reload >/dev/null 2>&1
-		else
-			/etc/init.d/firewall reload >/dev/null 2>&1
-		fi
-	fi
-}
-
-# gen_include 函数已废弃，fw4 使用 UCI 配置自动管理规则
-# 保留此函数以向后兼容，但在 fw4 下不再使用
 gen_include() {
-	local fw_type=$(detect_firewall)
-	if [ "$fw_type" = "fw4" ]; then
-		# fw4 下不需要生成 include 文件，直接返回
-		return 0
-	fi
-
-	# 仅在 fw3 下生成 include 文件（向后兼容）
 	echo '#!/bin/sh' > /var/etc/ipsecvpn.include
-	echo "# This file is generated for fw3 compatibility" >> /var/etc/ipsecvpn.include
-	echo "# fw4 uses UCI firewall rules directly" >> /var/etc/ipsecvpn.include
+	extract_rules() {
+		echo "*$1"
+		iptables-save -t $1 | grep "${ipt_flag}" | \
+		sed -e "s/^-A \(INPUT\)/-I \1 1/"
+		echo 'COMMIT'
+	}
+	cat <<-EOF >> /var/etc/ipsecvpn.include
+		iptables-save -c | grep -v "${ipt_flag}" | iptables-restore -c
+		iptables-restore -n <<-EOT
+		$(extract_rules filter)
+		$(extract_rules nat)
+		EOT
+	EOF
 	return 0
 }
 
 start() {
 	local vt_enabled=$(uci -q get ${CONFIG}.@service[0].enabled)
 	[ "$vt_enabled" = 0 ] && return 1
-
-	# 获取配置变量
-	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
-	local vt_secret=$(uci -q get ${CONFIG}.@service[0].secret)
-	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
-	local l2tp_localip=$(uci -q get ${CONFIG}.@service[0].l2tp_localip)
-
-	# 检查必要配置
-	if [ -z "$vt_clientip" ]; then
-		echo "错误：未配置客户端IP范围，请检查配置"
-		return 1
-	fi
-
+	
 	local vt_gateway="${vt_clientip%.*}.1"
+	local vt_secret=$(uci -q get ${CONFIG}.@service[0].secret)
+	
+	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
 	[ "${l2tp_enabled}" = 1 ] && {
 		touch ${CHAP_SECRETS}
 		local vt_remoteip=$(uci -q get ${CONFIG}.@service[0].l2tp_remoteip)
@@ -227,7 +97,7 @@ start() {
 		  esp=aes128-sha1,3des-sha1
 		EOF
 		)
-
+		
 		mkdir -p ${L2TP_PATH}
 		cat > ${L2TP_OPTIONS_FILE} <<-EOF
 			name "l2tp-server"
@@ -261,34 +131,34 @@ start() {
 			pppoptfile = ${L2TP_OPTIONS_FILE}
 			length bit = yes
 		EOF
-
+		
 		local l2tp_users=$(get_enabled_anonymous_secs "@l2tp_users")
 		[ -n "${l2tp_users}" ] && {
 			for _user in ${l2tp_users}; do
 				local u_enabled=$(uci -q get ${CONFIG}.${_user}.enabled)
 				[ "${u_enabled}" -eq 1 ] || continue
-
+				
 				local u_username=$(uci -q get ${CONFIG}.${_user}.username)
 				[ -n "${u_username}" ] || continue
-
+				
 				local u_password=$(uci -q get ${CONFIG}.${_user}.password)
 				[ -n "${u_password}" ] || continue
-
+				
 				local u_ipaddress=$(uci -q get ${CONFIG}.${_user}.ipaddress)
 				[ -n "${u_ipaddress}" ] || u_ipaddress="*"
-
+				
 				echo "${u_username} l2tp-server ${u_password} ${u_ipaddress}" >> ${CHAP_SECRETS}
 			done
 		}
 		unset user
-
+		
 		echo "ip-up-script /usr/share/xl2tpd/ip-up" >> ${L2TP_OPTIONS_FILE}
 		echo "ip-down-script /usr/share/xl2tpd/ip-down" >> ${L2TP_OPTIONS_FILE}
 
 		xl2tpd -c ${L2TP_CONFIG_FILE} -C ${L2TP_CONTROL_FILE} -D >${L2TP_LOG_FILE} 2>&1 &
 		rm -f "/usr/lib/ipsec/libipsec.so.0"
 	}
-
+	
 	cat > ${IPSEC_CONN_FILE} <<-EOF
 		# ipsec.conf - strongSwan IPsec configuration file
 
@@ -308,7 +178,7 @@ start() {
 		  rekeymargin=3m
 		  keyingtries=1
 		  auto=add
-
+		  
 		#######################################
 		# Default non L2TP Connections
 		#######################################
@@ -336,29 +206,29 @@ start() {
 	# /etc/ipsec.secrets - strongSwan IPsec secrets file
 	: PSK "$vt_secret"
 	EOF
-
+	
 	local ipsec_users=$(get_enabled_anonymous_secs "@ipsec_users")
 	[ -n "${ipsec_users}" ] && {
 		for _user in ${ipsec_users}; do
 			local u_enabled=$(uci -q get ${CONFIG}.${_user}.enabled)
 			[ "${u_enabled}" -eq 1 ] || continue
-
+			
 			local u_username=$(uci -q get ${CONFIG}.${_user}.username)
 			[ -n "${u_username}" ] || continue
-
+			
 			local u_password=$(uci -q get ${CONFIG}.${_user}.password)
 			[ -n "${u_password}" ] || continue
-
+			
 			echo "${u_username} : XAUTH '${u_password}'" >> ${IPSEC_SECRETS_FILE}
 		done
 	}
 	unset user
-
-	fw_rule add
-
+	
+	ipt_rule add
+	
 	/usr/lib/ipsec/starter --daemon charon --nofork > /dev/null 2>&1 &
 	gen_include
-
+	
 	uci -q batch <<-EOF >/dev/null
 		set network.ipsec_server.ipaddr="${vt_clientip%.*}.1"
 		commit network
@@ -372,73 +242,22 @@ stop() {
 	top -bn1 | grep "${L2TP_PATH}" | grep -v "grep" | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
 	rm -rf ${L2TP_PATH}
 	busybox ps -w | grep "/usr/lib/ipsec" | grep -v "grep" | awk '{print $1}' | xargs kill -9 >/dev/null 2>&1
-	fw_rule del
+	ipt_rule del
 	rm -rf /var/etc/ipsecvpn.include
 	ln -s "libipsec.so.0.0.0" "/usr/lib/ipsec/libipsec.so.0" >/dev/null 2>&1
 }
 
-# 添加重启功能
-restart() {
-	stop
-	sleep 2
-	start
-}
-
-# 添加状态检查功能
-status() {
-	local vt_enabled=$(uci -q get ${CONFIG}.@service[0].enabled)
-
-	if [ "$vt_enabled" != "1" ]; then
-		echo "服务已禁用"
-		return 1
-	fi
-
-	# 检查IPSec状态
-	if pgrep charon >/dev/null 2>&1; then
-		echo "IPSec 服务运行中"
-		local ipsec_status="运行中"
-	else
-		echo "IPSec 服务未运行"
-		local ipsec_status="未运行"
-	fi
-
-	# 检查L2TP状态
-	local l2tp_enabled=$(uci -q get ${CONFIG}.@service[0].l2tp_enable)
-	if [ "$l2tp_enabled" = "1" ]; then
-		if pgrep xl2tpd >/dev/null 2>&1; then
-			echo "L2TP 服务运行中"
-		else
-			echo "L2TP 服务未运行"
-		fi
-	else
-		echo "L2TP 服务已禁用"
-	fi
-
-	return 0
-}
-
 gen_iface_and_firewall() {
-	# 获取客户端IP配置
-	local vt_clientip=$(uci -q get ${CONFIG}.@service[0].clientip)
-
-	# 如果没有配置客户端IP，使用默认值
-	if [ -z "$vt_clientip" ]; then
-		echo "警告：未配置客户端IP，使用默认值 192.168.100.10/24"
-		vt_clientip="192.168.100.10/24"
-	fi
-
-	local gateway_ip="${vt_clientip%.*}.1"
-
 	uci -q batch <<-EOF >/dev/null
 		delete network.ipsec_server
 		set network.ipsec_server=interface
 		set network.ipsec_server.ifname="ipsec0"
 		set network.ipsec_server.device="ipsec0"
 		set network.ipsec_server.proto="static"
-		set network.ipsec_server.ipaddr="${gateway_ip}"
+		set network.ipsec_server.ipaddr="${vt_clientip%.*}.1"
 		set network.ipsec_server.netmask="255.255.255.0"
 		commit network
-
+		
 		delete firewall.ipsecserver
 		set firewall.ipsecserver=zone
 		set firewall.ipsecserver.name="ipsecserver"
@@ -450,7 +269,6 @@ gen_iface_and_firewall() {
 	EOF
 }
 
-# 检查并初始化网络接口和防火墙区域
 if [ -z "$(uci -q get network.ipsec_server)" ] || [ -z "$(uci -q get firewall.ipsecserver)" ]; then
 	gen_iface_and_firewall
 fi
