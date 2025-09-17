@@ -4,7 +4,9 @@ translate("luci-app-beardropper, the LuCI app built with the elegant firewall ru
 )
 m:chain("luci")
 
-m:section(SimpleSection).template="beardropper/status"
+-- Service Control Section
+service_section = m:section(SimpleSection)
+service_section.template = "beardropper/service_control"
 
 s = m:section(TypedSection, "beardropper", translate(""))
 s.anonymous = true
@@ -13,9 +15,6 @@ s.addremove = false
 -- TABS
 s:tab("options", translate("Options"))
 s:tab("blocked", translate("Blocked IP"))
-
-o = s:taboption("options", Flag, "enabled",translate("Enabled"))
-o.default = 0
 
 -- OPTIONS
 o = s:taboption("options", ListValue, "defaultMode", translate("Running Mode"))

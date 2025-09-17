@@ -9,6 +9,42 @@ msgstr "設置"
 msgid "Log"
 msgstr "日誌"
 
+msgid "Current Status"
+msgstr "當前狀態"
+
+msgid "Control"
+msgstr "控制"
+
+msgid "Start Service"
+msgstr "啟動服務"
+
+msgid "Stop Service"
+msgstr "停止服務"
+
+msgid "Running"
+msgstr "運行中"
+
+msgid "Not Running"
+msgstr "未運行"
+
+msgid "Starting service..."
+msgstr "正在啟動服務..."
+
+msgid "Stopping service..."
+msgstr "正在停止服務..."
+
+msgid "Service started"
+msgstr "服務已啟動"
+
+msgid "Service stopped"
+msgstr "服務已停止"
+
+msgid "Operation failed"
+msgstr "操作失敗"
+
+msgid "Network error"
+msgstr "網絡錯誤"
+
 #: ../../package/feeds/luci/luci-app-beardropper/luasrc/model/cbi/bearDropper/setting.lua:34
 msgid "Attempt Tolerance"
 msgstr "最大嘗試登錄次數"

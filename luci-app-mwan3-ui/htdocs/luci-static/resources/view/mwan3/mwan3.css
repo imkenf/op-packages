@@ -18,6 +18,7 @@
 	border-radius: 12px;
 	padding: 1.25rem;
 	width: 16rem;
+	flex: 0 0 16rem; /* 固定宽度，防止不同状态被拉伸 */
 /* 统一卡片高度（保证底部时间可见） */
 	height: 8.8rem;
 	box-sizing: border-box;
@@ -98,7 +99,7 @@
 }
 
 .mwan3-time-amount {
-	font-size: 0.75rem;
+	font-size: 1rem;
 	font-weight: 600;
 	color: #374151;
 	white-space: nowrap;

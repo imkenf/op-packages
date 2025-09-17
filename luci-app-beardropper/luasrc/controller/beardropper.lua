@@ -8,6 +8,8 @@ function index()
     entry({"admin", "services", "beardropper", "status"}, call("act_status"))
     entry({"admin", "services", "beardropper", "setting"}, cbi("beardropper/setting"), _("Setting"), 30).leaf= true
     entry({"admin", "services", "beardropper", "log"}, form("beardropper/log"),_("Log"),40).leaf= true
+    entry({"admin", "services", "beardropper", "start"}, call("act_start"))
+    entry({"admin", "services", "beardropper", "stop"}, call("act_stop"))
     --entry:
 end
 
@@ -24,4 +26,48 @@ function act_status()
 
     luci.http.prepare_content("application/json")
     luci.http.write_json(e)
+end
+
+function act_start()
+    local result = {}
+
+    -- 先启用服务
+    luci.sys.call("uci set beardropper.@beardropper[0].enabled=1")
+    luci.sys.call("uci commit beardropper")
+
+    -- 启动服务
+    local status = luci.sys.call("/etc/init.d/beardropper start >/dev/null 2>&1")
+
+    if status == 0 then
+        result.success = true
+        result.message = "BearDropper service started successfully"
+    else
+        result.success = false
+        result.message = "Failed to start BearDropper service"
+    end
+
+    luci.http.prepare_content("application/json")
+    luci.http.write_json(result)
+end
+
+function act_stop()
+    local result = {}
+
+    -- 停止服务
+    local status = luci.sys.call("/etc/init.d/beardropper stop >/dev/null 2>&1")
+
+    -- 禁用服务
+    luci.sys.call("uci set beardropper.@beardropper[0].enabled=0")
+    luci.sys.call("uci commit beardropper")
+
+    if status == 0 then
+        result.success = true
+        result.message = "BearDropper service stopped successfully"
+    else
+        result.success = false
+        result.message = "Failed to stop BearDropper service"
+    end
+
+    luci.http.prepare_content("application/json")
+    luci.http.write_json(result)
 end
