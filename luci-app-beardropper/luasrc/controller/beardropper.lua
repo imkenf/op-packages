@@ -60,6 +60,9 @@ function act_stop()
     -- 再停止服务
     local status = luci.sys.call("/etc/init.d/beardropper stop >/dev/null 2>&1")
 
+    -- 强制清理遗留进程（保险）
+    luci.sys.call("pgrep -f /usr/sbin/beardropper >/dev/null 2>&1 && kill -9 `pgrep -f /usr/sbin/beardropper` >/dev/null 2>&1")
+
     if status == 0 then
         result.success = true
         result.message = "BearDropper service stopped successfully"
