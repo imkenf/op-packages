@@ -86,13 +86,14 @@ function renderMwan3Status(status) {
 
 		if (time) {
 			statusview += '<div class="mwan3-time-info">';
-			// 插入 SVG 图标不转义
+			// 顶部一行：标签 + 数值
+			statusview += '<div class="mwan3-time-line">';
 			statusview += '<div class="mwan3-time-label">%s %h</div>'.format(timeIcon, tname);
+			statusview += '<div class="mwan3-time-amount">%h</div>'.format(time);
+			statusview += '</div>';
+			// 下方进度条
 			statusview += '<div class="mwan3-time-progress">';
 			statusview += '<div class="mwan3-time-progress-bar" style="width: %d%%"></div>'.format(progressWidth);
-			statusview += '</div>';
-			statusview += '<div class="mwan3-time-value">';
-			statusview += '<span>%h</span>'.format(time);
 			statusview += '</div>';
 			statusview += '</div>';
 		}

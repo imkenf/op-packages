@@ -4,6 +4,8 @@
 	flex-wrap: wrap;
 	gap: 1rem;
 	padding: 0.5rem 0;
+	padding-left: 1.25rem; /* 拉开与左侧框架距离 */
+	padding-right: 1.25rem;
 }
 
 /* 现代简约卡片设计 */
@@ -14,17 +16,17 @@
 	background: #ffffff !important;
 	border: 1px solid #e5e7eb;
 	border-radius: 12px;
-	padding: 1.5rem;
+	padding: 1.25rem;
 	width: 16rem;
-/* 统一卡片高度（略微降低） */
-	height: 8.5rem;
+/* 统一卡片高度（保证底部时间可见） */
+	height: 8.8rem;
 	box-sizing: border-box;
 	color: #111827;
 	border-left: 6px solid #e5e7eb;
 	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 	transition: all 0.2s ease-in-out;
 	position: relative;
-	overflow: hidden;
+	overflow: visible;
 }
 
 #mwan3-service-status > .alert-message:hover {
@@ -78,14 +80,28 @@
 	padding-top: 0.75rem;
 }
 
+.mwan3-time-line {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.3rem;
+}
+
 /* 时间标签 */
 .mwan3-time-label {
 	font-size: 0.75rem;
 	color: #9ca3af;
-	margin-bottom: 0.5rem;
 	display: flex;
 	align-items: center;
 	gap: 0.25rem;
+}
+
+.mwan3-time-amount {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: #374151;
+	white-space: nowrap;
 }
 
 /* 时间进度条容器 */
@@ -95,7 +111,6 @@
 	background: #f3f4f6;
 	border-radius: 2px;
 	overflow: hidden;
-	margin-bottom: 0.5rem;
 }
 
 /* 进度条填充 */
@@ -129,8 +144,12 @@
 	font-weight: 500;
 	color: #374151;
 	display: flex;
-	justify-content: space-between;
 	align-items: center;
+	justify-content: flex-end;
+	margin-top: 0.1rem;
+	margin-left: 0.5rem;
+	grid-column: 2;
+	white-space: nowrap;
 }
 
 /* 时间图标 */
@@ -158,7 +177,8 @@
 	background-size: 16px;
 }
 
-/* 左侧状态色条 */
+/* 左侧状态色条（统一作用于所有状态卡片） */
+#mwan3-service-status > .alert-message { min-height: 8.8rem; }
 #mwan3-service-status > .alert-message.success { border-left-color: #10b981; }
 
 #mwan3-service-status > .alert-message.success .mwan3-status-text {
