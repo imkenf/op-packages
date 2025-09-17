@@ -16,8 +16,8 @@
 	border-radius: 12px;
 	padding: 1.5rem;
 	width: 16rem;
-	/* 统一卡片高度，避免内容有无造成高度不一致 */
-	height: 10rem;
+/* 统一卡片高度（略微降低） */
+	height: 8.5rem;
 	box-sizing: border-box;
 	color: #111827;
 	border-left: 6px solid #e5e7eb;

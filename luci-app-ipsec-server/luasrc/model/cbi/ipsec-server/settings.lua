@@ -51,10 +51,40 @@ if sys.call("command -v xl2tpd > /dev/null") == 0 then
 		return '<font class="l2tp_status"></font>'
 	end
 
-	o = s:option(Flag, "l2tp_enable", "L2TP " .. translate("Enable"))
-	o.description = translate("Use a client that supports L2TP over IPSec PSK to connect to this server.")
-	o.default = 0
-	o.rmempty = false
+	-- L2TP toggle button instead of checkbox
+	local l2tp_btn = s:option(Button, "_l2tp_toggle")
+	l2tp_btn.title = "L2TP " .. translate("Enable")
+	l2tp_btn.cfgvalue = function(self, section)
+		local l2tp_running = (sys.call("top -bn1 | grep -v grep | grep '/var/etc/xl2tpd' >/dev/null") == 0)
+		self.inputtitle = l2tp_running and translate("停止L2TP") or translate("启用L2TP")
+		self.inputstyle = l2tp_running and "reset" or "apply"
+		return true
+	end
+	l2tp_btn.write = function(self, section)
+		local l2tp_running = (sys.call("top -bn1 | grep -v grep | grep '/var/etc/xl2tpd' >/dev/null") == 0)
+		local ipsec_running = (sys.call("/usr/bin/pgrep ipsec >/dev/null") == 0)
+		if l2tp_running then
+			-- 关闭 L2TP
+			sys.call("uci set luci-app-ipsec-server.@service[0].l2tp_enable='0'")
+			sys.call("uci commit luci-app-ipsec-server")
+			if ipsec_running then
+				sys.call("/etc/init.d/luci-app-ipsec-server restart >/dev/null 2>&1 &")
+			end
+		else
+			-- 启用 L2TP
+			sys.call("uci set luci-app-ipsec-server.@service[0].l2tp_enable='1'")
+			-- 若主服务未启用，则一并启用
+			if sys.call("uci -q get luci-app-ipsec-server.@service[0].enabled | grep -q '^1$'") ~= 0 then
+				sys.call("uci set luci-app-ipsec-server.@service[0].enabled='1'")
+			end
+			sys.call("uci commit luci-app-ipsec-server")
+			if ipsec_running then
+				sys.call("/etc/init.d/luci-app-ipsec-server restart >/dev/null 2>&1 &")
+			else
+				sys.call("/etc/init.d/luci-app-ipsec-server start >/dev/null 2>&1 &")
+			end
+		end
+	end
 
 	o = s:option(Value, "l2tp_localip", "L2TP " .. translate("Server IP"))
 	o.description = translate("VPN Server IP address, such as: 192.168.101.1")

@@ -93,7 +93,6 @@ function renderMwan3Status(status) {
 			statusview += '</div>';
 			statusview += '<div class="mwan3-time-value">';
 			statusview += '<span>%h</span>'.format(time);
-			statusview += '<span>%d%%</span>'.format(Math.round(progressWidth));
 			statusview += '</div>';
 			statusview += '</div>';
 		}
