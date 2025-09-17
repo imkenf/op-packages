@@ -1,17 +1,24 @@
 <style>
-.status{font-weight:700;display:inline-block;padding:2px 8px;border-radius:3px}
-.status.ok{background:#28a745;color:#fff}
-.status.no{background:#dc3545;color:#fff}
-/* 收紧说明行距和上下边距，使页面更紧凑 */
-.cbi-value{margin:6px 0}
-.cbi-value-description{margin-top:2px;margin-bottom:0;line-height:1.1}
+/* 状态徽章（圆点 + 文字），避免只显示色块 */
+.bdp-badge{display:inline-flex;align-items:center;font-weight:700}
+.bdp-badge .dot{width:10px;height:10px;border-radius:50%;margin-right:6px}
+.bdp-badge.ok .dot{background:#28a745}
+.bdp-badge.no .dot{background:#dc3545}
+.bdp-badge.ok .txt{color:#28a745}
+.bdp-badge.no .txt{color:#dc3545}
+
+/* 全页收紧行距与留白 */
+.cbi-map .cbi-section .cbi-value{margin:4px 0}
+.cbi-map .cbi-section .cbi-value-title,
+.cbi-map .cbi-section .cbi-value-field{padding-top:2px;padding-bottom:2px}
+.cbi-value-description{margin-top:2px;margin-bottom:0;line-height:1.08}
 </style>
 
 <!-- 按照 LuCI CBI 行布局渲染两行：当前状态、启用（按钮） -->
 <div class="cbi-value">
   <label class="cbi-value-title"><%:当前状态%></label>
   <div class="cbi-value-field">
-    <span id="service-status" class="status no"><%:Collecting data...%></span>
+    <span id="service-status" class="bdp-badge no"><span class="dot"></span><span class="txt"><%:Collecting data...%></span></span>
   </div>
 </div>
 
@@ -35,17 +42,18 @@ function updateServiceStatus() {
             try {
                 var data = JSON.parse(xhr.responseText);
                 var statusElement = document.getElementById('service-status');
+                var statusText = statusElement ? statusElement.querySelector('.txt') : null;
                 var btnStart = document.getElementById('btn-start');
                 var btnStop = document.getElementById('btn-stop');
 
                 if (data.running) {
-                    statusElement.textContent = '<%:运行中%>';
-                    statusElement.className = 'status ok';
+                    if (statusText) { statusText.textContent = '<%:运行中%>'; }
+                    statusElement.className = 'bdp-badge ok';
                     btnStart.style.display = 'none';
                     btnStop.style.display = 'inline-block';
                 } else {
-                    statusElement.textContent = '<%:未运行%>';
-                    statusElement.className = 'status no';
+                    if (statusText) { statusText.textContent = '<%:未运行%>'; }
+                    statusElement.className = 'bdp-badge no';
                     btnStart.style.display = 'inline-block';
                     btnStop.style.display = 'none';
                 }

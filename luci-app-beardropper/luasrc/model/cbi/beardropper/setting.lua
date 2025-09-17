@@ -38,7 +38,7 @@ o:value("1", translate("Default"))
 o:value("2", translate("Verbose"))
 o:value("3", translate("Debug"))
 
-o = s:taboption("options", ListValue, "firewallBackend", translate("Firewall Backend"), translate("Select firewall backend (auto-detect recommended)"))
+o = s:taboption("options", ListValue, "firewallBackend", translate("Firewall Version"), translate("Select firewall version (auto-detect recommended)"))
 o.default = "auto"
 o:value("auto", translate("Auto-detect"))
 o:value("fw3", translate("fw3 (iptables)"))
