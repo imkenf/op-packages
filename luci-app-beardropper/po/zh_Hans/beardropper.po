@@ -9,16 +9,16 @@ msgstr "设置"
 msgid "Log"
 msgstr "日志"
 
-msgid "Current Status"
+msgid "当前状态"
 msgstr "当前状态"
 
-msgid "Control"
+msgid "控制"
 msgstr "控制"
 
-msgid "Start Service"
+msgid "启动服务"
 msgstr "启动服务"
 
-msgid "Stop Service"
+msgid "停止服务"
 msgstr "停止服务"
 
 msgid "Running"

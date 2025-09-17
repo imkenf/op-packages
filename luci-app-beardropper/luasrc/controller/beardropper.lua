@@ -53,12 +53,12 @@ end
 function act_stop()
     local result = {}
 
-    -- 停止服务
-    local status = luci.sys.call("/etc/init.d/beardropper stop >/dev/null 2>&1")
-
-    -- 禁用服务
+    -- 先禁用服务，避免 procd 立即拉起
     luci.sys.call("uci set beardropper.@beardropper[0].enabled=0")
     luci.sys.call("uci commit beardropper")
+
+    -- 再停止服务
+    local status = luci.sys.call("/etc/init.d/beardropper stop >/dev/null 2>&1")
 
     if status == 0 then
         result.success = true
