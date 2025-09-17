@@ -8,6 +8,18 @@ msgstr "设置"
 
 msgid "Log"
 msgstr "日志"
+# 界面新增中文条目
+msgid "Firewall Version"
+msgstr "防火墙版本"
+
+msgid "Select firewall version (auto-detect recommended)"
+msgstr "选择防火墙版本（推荐自动检测）"
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "Not Running"
+msgstr "未运行"
 
 msgid "当前状态"
 msgstr "当前状态"
