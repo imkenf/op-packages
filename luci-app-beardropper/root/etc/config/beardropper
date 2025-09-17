@@ -22,3 +22,6 @@ config beardropper
 	option defaultMode 'follow'
 	option enabled '1'
 	option logLevel '2'
+	# LuCI 日志查看：将 beardropper 运行日志写入临时文件，限制大小
+	option fileLogPath '/tmp/beardropper.log'
+	option fileLogMaxSize '64k'

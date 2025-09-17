@@ -69,6 +69,9 @@ uciLoadVar firewallBackend auto
 # unlikely that these will need to be changed, but just in case...
 #
 uciLoadVar syslogTag "beardropper[$$]"
+# 可选：将运行日志同时写入文件，便于 LuCI 查看
+uciLoadVar fileLogPath /tmp/beardropper.log
+uciLoadVar fileLogMaxSize 64k
 # how often to attempt to expire bans when in follow mode
 uciLoadVar followModeCheckInterval 30m
 uciLoadVar cmdLogread 'logread'		# for tuning, ex: "logread -l250"
@@ -313,6 +316,23 @@ logLine () {
   if [ "$logFacility" = "stdout" ] ; then echo "$@"
   elif [ "$logFacility" = "stderr" ] ; then echo "$@" >&2
   else logger -t "$syslogTag" -p "$logFacility" "$@"
+  fi
+  # 追加写入文件日志并控制大小
+  if [ -n "$fileLogPath" ] ; then
+    echo "`date +'%Y-%m-%d %H:%M:%S'` $@" >> "$fileLogPath" 2>/dev/null
+    if [ -n "$fileLogMaxSize" ] ; then
+      # 当日志超过限制时，保留最后 32KB 内容
+      max_bytes=`echo "$fileLogMaxSize" | busybox awk '
+        /k$/ {print int($0)*1024; next}
+        /m$/ {print int($0)*1024*1024; next}
+        {print int($0)}'`
+      [ -n "$max_bytes" ] && [ -f "$fileLogPath" ] && {
+        size=`wc -c < "$fileLogPath" 2>/dev/null`
+        if [ "$size" -gt "$max_bytes" ] ; then
+          tail -c 32768 "$fileLogPath" > "$fileLogPath.tmp" 2>/dev/null && mv "$fileLogPath.tmp" "$fileLogPath"
+        fi
+      }
+    fi
   fi
 }
 

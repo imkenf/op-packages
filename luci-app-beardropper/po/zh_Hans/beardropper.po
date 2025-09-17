@@ -133,6 +133,17 @@ msgstr "仅今日"
 #: ../../package/feeds/luci/luci-app-beardropper/luasrc/model/cbi/bearDropper/setting.lua:44
 msgid "Verbose"
 msgstr "详细"
+msgid "Log File Path"
+msgstr "日志文件路径"
+
+msgid "Empty disables file logging. Avoid persistent flash unless necessary."
+msgstr "留空则关闭文件日志。除非必要，请避免写入持久化闪存。"
+
+msgid "Log File Max Size"
+msgstr "日志文件大小限制"
+
+msgid "Examples: 64k, 256k, 1m; default 64k"
+msgstr "示例：64k、256k、1m；默认64k"
 
 #: ../../package/feeds/luci/luci-app-beardropper/luasrc/model/cbi/bearDropper/setting.lua:31
 msgid "Wipe"

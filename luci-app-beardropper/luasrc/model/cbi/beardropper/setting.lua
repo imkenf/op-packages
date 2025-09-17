@@ -44,6 +44,13 @@ o:value("auto", translate("Auto-detect"))
 o:value("fw3", translate("fw3 (iptables)"))
 o:value("fw4", translate("fw4 (nftables)"))
 
+-- Log file options
+o = s:taboption("options", Value, "fileLogPath", translate("Log File Path"), translate("Empty disables file logging. Avoid persistent flash unless necessary."))
+o.placeholder = "/tmp/beardropper.log"
+
+o = s:taboption("options", Value, "fileLogMaxSize", translate("Log File Max Size"), translate("Examples: 64k, 256k, 1m; default 64k"))
+o.placeholder = "64k"
+
 
 o = s:taboption("blocked", Value, "blocked", translate("Blocked IP List"))
 o.template="cbi/tvalue"

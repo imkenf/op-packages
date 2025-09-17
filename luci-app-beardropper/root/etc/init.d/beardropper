@@ -30,7 +30,11 @@ beardropper_instance() {
 	procd_set_param pidfile /var/run/beardropper.pid
 	procd_set_param stdout 1
 	procd_set_param stderr 1
-	procd_set_param respawn
+	# 仅在 follow（守护）模式下启用 respawn；
+	# 其它模式为一次性任务（entire/today/interval/wipe），不自动重启
+	if [ "$defaultMode" = "follow" ]; then
+		procd_set_param respawn
+	fi
 	procd_close_instance
 }
 
