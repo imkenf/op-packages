@@ -13,7 +13,7 @@ config beardropper
 	list firewallHookChain 'zone_wan_input:1'
 	list firewallHookChain 'zone_wan_forward:1'
 	option firewallTarget 'DROP'
-	# auto-detect firewall backend (auto/fw3/fw4)
+	# auto-detect firewall version (auto/fw3/fw4)
 	option firewallBackend 'auto'
 	list logRegex 's/[`$"\'\'']//g'
 	list logRegex '/has invalid shell, rejected$/d'

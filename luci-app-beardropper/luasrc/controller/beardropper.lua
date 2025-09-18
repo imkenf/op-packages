@@ -30,20 +30,32 @@ end
 
 function act_start()
     local result = {}
+    local function log_action(msg)
+        local path = luci.sys.exec("uci -q get beardropper.@beardropper[0].fileLogPath 2>/dev/null") or ""
+        path = (path or ""):gsub("%s+$", "")
+        luci.sys.call("logger -t 'beardropper[luci]' '" .. msg .. "'")
+        if path ~= "" then
+            local ts = os.date('%Y-%m-%d %H:%M:%S')
+            luci.sys.call("echo '" .. ts .. " " .. msg .. "' >> " .. path .. " 2>/dev/null")
+        end
+    end
 
     -- 先启用服务
     luci.sys.call("uci set beardropper.@beardropper[0].enabled=1")
     luci.sys.call("uci commit beardropper")
 
     -- 启动服务
+    log_action("LuCI start requested")
     local status = luci.sys.call("/etc/init.d/beardropper start >/dev/null 2>&1")
 
     if status == 0 then
         result.success = true
         result.message = "BearDropper service started successfully"
+        log_action("LuCI start success")
     else
         result.success = false
         result.message = "Failed to start BearDropper service"
+        log_action("LuCI start failed")
     end
 
     luci.http.prepare_content("application/json")
@@ -58,6 +70,16 @@ function act_stop()
     luci.sys.call("uci commit beardropper")
 
     -- 再停止服务
+    local function log_action(msg)
+        local path = luci.sys.exec("uci -q get beardropper.@beardropper[0].fileLogPath 2>/dev/null") or ""
+        path = (path or ""):gsub("%s+$", "")
+        luci.sys.call("logger -t 'beardropper[luci]' '" .. msg .. "'")
+        if path ~= "" then
+            local ts = os.date('%Y-%m-%d %H:%M:%S')
+            luci.sys.call("echo '" .. ts .. " " .. msg .. "' >> " .. path .. " 2>/dev/null")
+        end
+    end
+    log_action("LuCI stop requested")
     local status = luci.sys.call("/etc/init.d/beardropper stop >/dev/null 2>&1")
 
     -- 强制清理遗留进程（保险）
@@ -66,9 +88,11 @@ function act_stop()
     if status == 0 then
         result.success = true
         result.message = "BearDropper service stopped successfully"
+        log_action("LuCI stop success")
     else
         result.success = false
         result.message = "Failed to stop BearDropper service"
+        log_action("LuCI stop failed")
     end
 
     luci.http.prepare_content("application/json")

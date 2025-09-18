@@ -8,6 +8,11 @@ msgstr "設置"
 
 msgid "Log"
 msgstr "日誌"
+msgid "Firewall Version"
+msgstr "防火牆版本"
+
+msgid "Select firewall version (auto-detect recommended)"
+msgstr "選擇防火牆版本（建議自動檢測）"
 
 msgid "Current Status"
 msgstr "當前狀態"

@@ -58,7 +58,11 @@ o.rows=40
 o.wrap="off"
 o.readonly="true"
 function o.cfgvalue(e, e)
-	return luci.sys.exec("cat /tmp/beardropper.bddb | awk /'=1/'| awk -F '=' '{print $1}' | awk '{print substr($0,6)}' | awk 'gsub(/_/,\":\",$0)'")
+    -- 优先使用临时态文件，其次用持久化态文件；文件不存在则返回空，避免启动时cat报错
+    local cmd = "( [ -f /tmp/beardropper.bddb ] && cat /tmp/beardropper.bddb || " ..
+                "[ -f /etc/beardropper.bddb ] && cat /etc/beardropper.bddb || true ) " ..
+                "| awk /'=1/' | awk -F '=' '{print $1}' | awk '{print substr($0,6)}' | awk 'gsub(/_/,\":\",$0)' 2>/dev/null"
+    return luci.sys.exec(cmd)
 end
 
 
